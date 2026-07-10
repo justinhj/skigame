@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SLOPE RACER '84</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a1a;
+      font-family: 'Press Start 2P', monospace;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    #game-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* CRT scanline overlay */
+    #scanlines {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.12) 0px,
+        rgba(0, 0, 0, 0.12) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+
+    #vignette {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 49;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.45) 100%);
+    }
+
+    /* HUD */
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 40;
+      padding: 16px 20px;
+      display: none;
+      justify-content: space-between;
+      align-items: flex-start;
+      color: #fff;
+      text-shadow: 3px 3px 0 #000;
+      font-size: 11px;
+      line-height: 1.8;
+      pointer-events: none;
+    }
+
+    #hud .left, #hud .right { min-width: 140px; }
+    #hud .right { text-align: right; }
+    #hud .center {
+      text-align: center;
+      flex: 1;
+    }
+
+    #lives span {
+      color: #ff6b9d;
+      letter-spacing: 4px;
+    }
+
+    #level-up-banner {
+      position: fixed;
+      top: 22%;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 46;
+      color: #00ff88;
+      font-size: 16px;
+      text-shadow: 3px 3px 0 #000, 0 0 14px #00ff88;
+      display: none;
+      pointer-events: none;
+      letter-spacing: 2px;
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    #air-banner {
+      position: fixed;
+      top: 28%;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 45;
+      color: #ffee00;
+      font-size: 18px;
+      text-shadow: 3px 3px 0 #000, 0 0 12px #ffaa00;
+      display: none;
+      pointer-events: none;
+      letter-spacing: 2px;
+      animation: pulse 0.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { transform: translateX(-50%) scale(1); }
+      to { transform: translateX(-50%) scale(1.08); }
+    }
+
+    #crash-flash {
+      position: fixed;
+      inset: 0;
+      z-index: 48;
+      background: #ff3366;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+
+    /* Menus */
+    .menu {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #1a0a2e 0%, #16213e 40%, #0f3460 100%);
+      color: #fff;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .menu.hidden { display: none; }
+
+    .menu h1 {
+      font-size: clamp(18px, 4vw, 36px);
+      color: #ff6b9d;
+      text-shadow:
+        4px 4px 0 #000,
+        0 0 20px #ff6b9d;
+      margin-bottom: 8px;
+      letter-spacing: 2px;
+    }
+
+    .menu .subtitle {
+      font-size: 10px;
+      color: #88ccff;
+      margin-bottom: 32px;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    .menu .pixel-skier {
+      width: 64px;
+      height: 80px;
+      margin-bottom: 28px;
+      image-rendering: pixelated;
+    }
+
+    .menu p {
+      font-size: 9px;
+      line-height: 2;
+      color: #dde;
+      max-width: 420px;
+      margin-bottom: 8px;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    .menu .controls {
+      margin: 20px 0 28px;
+      padding: 16px 20px;
+      border: 3px solid #ff6b9d;
+      background: rgba(0,0,0,0.35);
+      box-shadow: 6px 6px 0 #000;
+    }
+
+    .menu .controls p {
+      color: #ffee00;
+      margin: 0;
+      font-size: 9px;
+    }
+
+    .btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 12px;
+      padding: 16px 28px;
+      border: 4px solid #fff;
+      background: #ff6b9d;
+      color: #fff;
+      cursor: pointer;
+      text-shadow: 2px 2px 0 #000;
+      box-shadow: 6px 6px 0 #000;
+      transition: transform 0.08s, box-shadow 0.08s;
+      margin-top: 12px;
+    }
+
+    .btn:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 8px 8px 0 #000;
+      background: #ff8fb3;
+    }
+
+    .btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000;
+    }
+
+    .score-big {
+      font-size: 22px;
+      color: #ffee00;
+      text-shadow: 3px 3px 0 #000;
+      margin: 16px 0;
+    }
+
+    .high-score {
+      font-size: 10px;
+      color: #88ffaa;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 0 #000;
+    }
+
+    #stars {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .menu-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    #howto {
+      font-size: 8px;
+      color: #99a;
+      margin-top: 24px;
+      line-height: 1.9;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container"></div>
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+  <div id="crash-flash"></div>
+  <div id="air-banner">AIR TIME!</div>
+
+  <div id="hud">
+    <div class="left">
+      <div>SCORE <span id="score">0</span></div>
+      <div id="lives">LIVES <span>♥♥♥</span></div>
+    </div>
+    <div class="center">
+      <div id="combo"></div>
+    </div>
+    <div class="right">
+      <div>LVL <span id="level-label">1</span></div>
+      <div style="font-size:9px;margin-top:4px;color:#ffee00">SPD <span id="speed-label">36</span></div>
+    </div>
+  </div>
+  <div id="level-up-banner">LEVEL UP!</div>
+
+  <!-- Title menu -->
+  <div id="menu" class="menu">
+    <div id="stars"></div>
+    <div class="menu-content">
+      <h1>SLOPE RACER '84</h1>
+      <div class="subtitle">◆ 8-BIT ALPINE ADVENTURE ◆</div>
+      <canvas id="menu-skier" class="pixel-skier" width="64" height="80"></canvas>
+      <div class="controls">
+        <p>← → STEER</p>
+        <p>JUMP RAMPS = AIR POINTS</p>
+        <p>LEVEL UP EVERY 30s</p>
+        <p>FASTER LEVELS = MORE POINTS</p>
+      </div>
+      <p>Dodge trees &amp; skiers. Survive the slope!</p>
+      <p class="high-score" id="menu-high">HI-SCORE 0</p>
+      <button class="btn" id="start-btn">PRESS START</button>
+      <div id="howto">3 CRASHES = GAME OVER</div>
+    </div>
+  </div>
+
+  <!-- Game over menu -->
+  <div id="gameover" class="menu hidden">
+    <div class="menu-content">
+      <h1>WIPED OUT!</h1>
+      <div class="subtitle">BETTER LUCK NEXT RUN</div>
+      <p>YOUR SCORE</p>
+      <div class="score-big" id="final-score">0</div>
+      <p class="high-score" id="go-high">HI-SCORE 0</p>
+      <button class="btn" id="retry-btn">TRY AGAIN</button>
+      <button class="btn" id="menu-btn" style="background:#4488cc; margin-left: 8px;">MENU</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+  <script type="module">
+import * as THREE from 'three';
+
+// ─── Palette (80s neon / NES-ish) ───────────────────────────
+const C = {
+  skyTop: 0x1a0a3e,
+  skyBot: 0x4a90d9,
+  snow: 0xe8f4ff,
+  snowShade: 0xc5d8ea,
+  treeGreen: 0x1a8f4a,
+  treeDark: 0x0d5c2e,
+  trunk: 0x6b3a1f,
+  pink: 0xff6b9d,
+  yellow: 0xffee00,
+  cyan: 0x44e0ff,
+  purple: 0x9b59b6,
+  orange: 0xff8844,
+  skin: 0xffccaa,
+  red: 0xff3355,
+  blue: 0x3388ff,
+  white: 0xffffff,
+  black: 0x1a1a2e,
+};
+
+// ─── DOM ────────────────────────────────────────────────────
+const container = document.getElementById('game-container');
+const hud = document.getElementById('hud');
+const menu = document.getElementById('menu');
+const gameover = document.getElementById('gameover');
+const scoreEl = document.getElementById('score');
+const livesEl = document.querySelector('#lives span');
+const speedLabel = document.getElementById('speed-label');
+const levelLabel = document.getElementById('level-label');
+const airBanner = document.getElementById('air-banner');
+const levelUpBanner = document.getElementById('level-up-banner');
+const crashFlash = document.getElementById('crash-flash');
+const comboEl = document.getElementById('combo');
+const finalScoreEl = document.getElementById('final-score');
+const menuHigh = document.getElementById('menu-high');
+const goHigh = document.getElementById('go-high');
+
+// ─── Menu skier doodle ──────────────────────────────────────
+(function drawMenuSkier() {
+  const c = document.getElementById('menu-skier');
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  // simple pixel art skier
+  const px = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); };
+  // skis
+  px(8, 70, 22, 4, '#ffee00');
+  px(34, 70, 22, 4, '#ffee00');
+  // boots
+  px(18, 58, 8, 12, '#ff6b9d');
+  px(38, 58, 8, 12, '#ff6b9d');
+  // body
+  px(22, 34, 20, 26, '#44e0ff');
+  // arms
+  px(10, 38, 12, 8, '#44e0ff');
+  px(42, 38, 12, 8, '#44e0ff');
+  // poles
+  px(8, 40, 3, 28, '#fff');
+  px(53, 40, 3, 28, '#fff');
+  // head
+  px(24, 16, 16, 16, '#ffccaa');
+  // hat
+  px(22, 8, 20, 10, '#ff6b9d');
+  px(26, 2, 12, 8, '#ff6b9d');
+  // pom-pom
+  px(28, 0, 8, 6, '#ffee00');
+  // eyes
+  px(28, 22, 3, 3, '#1a1a2e');
+  px(37, 22, 3, 3, '#1a1a2e');
+  // blush
+  px(26, 26, 3, 2, '#ff88aa');
+  px(39, 26, 3, 2, '#ff88aa');
+  // smile
+  px(30, 28, 6, 2, '#1a1a2e');
+})();
+
+// Twinkling stars on menu
+(function stars() {
+  const el = document.getElementById('stars');
+  for (let i = 0; i < 40; i++) {
+    const s = document.createElement('div');
+    s.style.cssText = `
+      position:absolute;
+      width:${2 + (i % 3)}px; height:${2 + (i % 3)}px;
+      background:${i % 4 === 0 ? '#ff6b9d' : i % 3 === 0 ? '#ffee00' : '#fff'};
+      left:${Math.random() * 100}%; top:${Math.random() * 100}%;
+      opacity:${0.3 + Math.random() * 0.7};
+      box-shadow: 0 0 4px currentColor;
+      animation: twinkle ${1 + Math.random() * 2}s infinite alternate;
+    `;
+    el.appendChild(s);
+  }
+  const style = document.createElement('style');
+  style.textContent = `@keyframes twinkle { from { opacity: 0.2; } to { opacity: 1; } }`;
+  document.head.appendChild(style);
+})();
+
+// ─── Game state ─────────────────────────────────────────────
+const LEVEL_INTERVAL = 30; // seconds between level-ups
+const BASE_SPEED = 36;
+const SPEED_PER_LEVEL = 7;
+const MAX_LEVEL = 20;
+
+const state = {
+  mode: 'menu', // menu | play | gameover
+  score: 0,
+  lives: 3,
+  highScore: parseInt(localStorage.getItem('slopeRacerHi') || '0', 10),
+  level: 1,
+  levelTimer: 0,
+  speed: BASE_SPEED,
+  playerX: 0,
+  playerY: 0, // vertical (air)
+  velY: 0,
+  onGround: true,
+  airTime: 0,
+  invincible: 0,
+  distance: 0,
+  difficulty: 1,
+  keys: { left: false, right: false },
+  objects: [],
+  nextSpawnZ: -40,
+  crashCooldown: 0,
+  levelBannerTimer: 0,
+  clock: new THREE.Clock(),
+  anim: 0,
+};
+
+function speedForLevel(level) {
+  return BASE_SPEED + (level - 1) * SPEED_PER_LEVEL;
+}
+
+menuHigh.textContent = `HI-SCORE ${state.highScore}`;
+
+// ─── Three.js setup (low-res pixel look) ────────────────────
+const PIXEL_SCALE = 3; // render at 1/3 resolution then upscale
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x6a9fd4, 0.011);
+
+// Steeper FOV + high chase cam for downhill vanishing-point feel
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(0, 9.5, 13);
+camera.lookAt(0, -1.5, -18);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+renderer.setPixelRatio(1);
+renderer.setSize(
+  Math.floor(window.innerWidth / PIXEL_SCALE),
+  Math.floor(window.innerHeight / PIXEL_SCALE),
+  false
+);
+renderer.domElement.style.width = '100%';
+renderer.domElement.style.height = '100%';
+renderer.setClearColor(0x4a90d9);
+container.appendChild(renderer.domElement);
+
+// Soft lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xfff0dd, 0.95);
+sun.position.set(5, 20, 10);
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0xff88cc, 0.25);
+rim.position.set(-8, 5, -5);
+scene.add(rim);
+
+// ─── Helpers: chunky materials ──────────────────────────────
+function mat(color, flat = true) {
+  return new THREE.MeshLambertMaterial({ color, flatShading: flat });
+}
+
+// Track group pitched so the run falls away downhill into the distance
+// Negative X rotation: far (-Z) drops in world Y
+const TRACK_PITCH = -0.34; // ~19° downhill
+const track = new THREE.Group();
+track.rotation.x = TRACK_PITCH;
+scene.add(track);
+
+// ─── Snow slope ─────────────────────────────────────────────
+const SLOPE_W = 28;
+const SLOPE_LEN = 180;
+const slopeGeo = new THREE.PlaneGeometry(SLOPE_W, SLOPE_LEN, 1, 1);
+const slopeMat = mat(C.snow);
+const slope = new THREE.Mesh(slopeGeo, slopeMat);
+slope.rotation.x = -Math.PI / 2;
+slope.position.set(0, 0, -SLOPE_LEN / 2 + 16);
+track.add(slope);
+
+// Side banks / edge markers
+function makeBank(x) {
+  const g = new THREE.BoxGeometry(2.5, 1.2, SLOPE_LEN);
+  const m = mat(0xb8d4e8);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(x, 0.2, -SLOPE_LEN / 2 + 16);
+  track.add(mesh);
+  return mesh;
+}
+makeBank(-SLOPE_W / 2 - 0.5);
+makeBank(SLOPE_W / 2 + 0.5);
+
+// Stripe lines on snow for motion feel
+const stripes = [];
+for (let i = 0; i < 28; i++) {
+  const g = new THREE.PlaneGeometry(0.35, 3.5);
+  const m = mat(0xd0e4f5);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set((i % 2 === 0 ? -1.5 : 1.5), 0.03, -i * 6);
+  track.add(mesh);
+  stripes.push(mesh);
+}
+
+// Extra perspective guides (lane edges fading into the distance)
+for (const side of [-1, 1]) {
+  for (let i = 0; i < 20; i++) {
+    const g = new THREE.BoxGeometry(0.2, 0.08, 2.2);
+    const m = mat(side < 0 ? 0xff6b9d : 0x44e0ff);
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(side * (SLOPE_W / 2 - 0.8), 0.05, -8 - i * 7);
+    track.add(mesh);
+    stripes.push(mesh); // scroll with stripes
+  }
+}
+
+// Sky gradient via large sphere (world space, not pitched)
+const skyGeo = new THREE.SphereGeometry(160, 16, 12);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  fog: false,
+  uniforms: {
+    topColor: { value: new THREE.Color(C.skyTop) },
+    bottomColor: { value: new THREE.Color(C.skyBot) },
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorld = w.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorld;
+    void main() {
+      float h = normalize(vWorld).y;
+      float t = clamp(h * 0.6 + 0.4, 0.0, 1.0);
+      float bands = floor(t * 8.0) / 8.0;
+      gl_FragColor = vec4(mix(bottomColor, topColor, bands), 1.0);
+    }
+  `,
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// ─── Parallax mountain layers (scroll slower than the run) ──
+const mountainLayers = []; // { meshes, speed, wrapMin, wrapMax }
+
+function makePeakMesh(w, h, col) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-w / 2, 0);
+  shape.lineTo(-w * 0.28, h * 0.45);
+  shape.lineTo(-w * 0.05, h);
+  shape.lineTo(w * 0.2, h * 0.55);
+  shape.lineTo(w / 2, 0);
+  shape.closePath();
+  const geo = new THREE.ShapeGeometry(shape);
+  // BasicMaterial + no fog so silhouettes stay crisp and visible
+  const m = new THREE.MeshBasicMaterial({
+    color: col,
+    side: THREE.DoubleSide,
+    fog: false,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, m);
+  mesh.renderOrder = -5;
+  return mesh;
+}
+
+function buildMountainLayer({ side, xBase, zStart, count, spacing, speed, colors, sizeScale, yBase }) {
+  const meshes = [];
+  for (let i = 0; i < count; i++) {
+    const w = (4 + Math.random() * 7) * sizeScale;
+    const h = (3 + Math.random() * 6) * sizeScale;
+    const col = colors[i % colors.length];
+    const mesh = makePeakMesh(w, h, col);
+    const xJitter = (Math.random() - 0.5) * 4;
+    const x = side * (xBase + Math.random() * 6) + xJitter;
+    const z = zStart - i * spacing - Math.random() * spacing * 0.4;
+    mesh.position.set(x, yBase, z);
+    // Slight yaw so they're not perfectly flat to camera
+    mesh.rotation.y = side * 0.15;
+    track.add(mesh);
+    meshes.push(mesh);
+  }
+  const wrapMax = 20;
+  const wrapMin = zStart - count * spacing - 10;
+  mountainLayers.push({ meshes, speed, wrapMin, wrapMax, span: wrapMax - wrapMin });
+}
+
+// Far slow layer — small distant peaks along both sides
+const farColors = [0x5a7aaa, 0x4a6a9a, 0x3d5f8a, 0x6a88aa];
+const midColors = [0x6a8aba, 0x7a9aca, 0x5a7aaa, 0x8899bb];
+buildMountainLayer({
+  side: -1, xBase: 20, zStart: 10, count: 18, spacing: 9,
+  speed: 0.22, colors: farColors, sizeScale: 1.1, yBase: 0.2,
+});
+buildMountainLayer({
+  side: 1, xBase: 20, zStart: 6, count: 18, spacing: 9,
+  speed: 0.22, colors: farColors, sizeScale: 1.1, yBase: 0.2,
+});
+// Mid layer — a bit closer / larger / faster
+buildMountainLayer({
+  side: -1, xBase: 16.5, zStart: 8, count: 14, spacing: 11,
+  speed: 0.45, colors: midColors, sizeScale: 1.45, yBase: 0.15,
+});
+buildMountainLayer({
+  side: 1, xBase: 16.5, zStart: 4, count: 14, spacing: 11,
+  speed: 0.45, colors: midColors, sizeScale: 1.45, yBase: 0.15,
+});
+
+// ─── Cute player skier (faces downhill = -Z, away from camera) ─
+const player = new THREE.Group();
+player.position.set(0, 0, 0);
+track.add(player);
+
+// Visual group faces -Z; lean/physics applied on root `player`
+const playerMesh = new THREE.Group();
+playerMesh.rotation.y = Math.PI; // face down the slope
+player.add(playerMesh);
+
+function box(w, h, d, color, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+  m.position.set(x, y, z);
+  return m;
+}
+
+// Skis (tips point forward in local +Z, then mesh is spun 180°)
+const skiL = box(0.22, 0.06, 1.4, C.yellow, -0.22, 0.05, 0.1);
+const skiR = box(0.22, 0.06, 1.4, C.yellow, 0.22, 0.05, 0.1);
+playerMesh.add(skiL, skiR);
+
+// Boots
+playerMesh.add(box(0.22, 0.22, 0.28, C.pink, -0.22, 0.2, 0.05));
+playerMesh.add(box(0.22, 0.22, 0.28, C.pink, 0.22, 0.2, 0.05));
+
+// Legs
+playerMesh.add(box(0.2, 0.35, 0.2, C.cyan, -0.2, 0.42, 0));
+playerMesh.add(box(0.2, 0.35, 0.2, C.cyan, 0.2, 0.42, 0));
+
+// Body
+const body = box(0.55, 0.55, 0.4, C.cyan, 0, 0.85, 0);
+playerMesh.add(body);
+
+// Arms
+const armL = box(0.16, 0.4, 0.16, C.cyan, -0.4, 0.85, 0);
+const armR = box(0.16, 0.4, 0.16, C.cyan, 0.4, 0.85, 0);
+playerMesh.add(armL, armR);
+
+// Poles
+playerMesh.add(box(0.05, 0.9, 0.05, C.white, -0.5, 0.55, 0.15));
+playerMesh.add(box(0.05, 0.9, 0.05, C.white, 0.5, 0.55, 0.15));
+
+// Head
+const head = box(0.42, 0.42, 0.4, C.skin, 0, 1.3, 0);
+playerMesh.add(head);
+
+// Hat + pom
+playerMesh.add(box(0.48, 0.22, 0.45, C.pink, 0, 1.55, 0));
+playerMesh.add(box(0.28, 0.18, 0.28, C.pink, 0, 1.72, 0));
+playerMesh.add(box(0.16, 0.16, 0.16, C.yellow, 0, 1.88, 0)); // pom-pom
+
+// Face features (local +Z = downhill after 180° Y spin → away from camera)
+playerMesh.add(box(0.08, 0.1, 0.05, C.black, -0.1, 1.32, 0.2));
+playerMesh.add(box(0.08, 0.1, 0.05, C.black, 0.1, 1.32, 0.2));
+playerMesh.add(box(0.04, 0.04, 0.04, C.white, -0.08, 1.35, 0.22));
+playerMesh.add(box(0.04, 0.04, 0.04, C.white, 0.12, 1.35, 0.22));
+playerMesh.add(box(0.08, 0.05, 0.04, 0xff8899, -0.16, 1.22, 0.2));
+playerMesh.add(box(0.08, 0.05, 0.04, 0xff8899, 0.16, 1.22, 0.2));
+playerMesh.add(box(0.12, 0.04, 0.04, C.black, 0, 1.18, 0.2));
+
+// Shadow (on root so it doesn't spin with facing)
+const shadow = new THREE.Mesh(
+  new THREE.CircleGeometry(0.55, 12),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 })
+);
+shadow.rotation.x = -Math.PI / 2;
+shadow.position.y = 0.03;
+player.add(shadow);
+
+// ─── Object factories ───────────────────────────────────────
+function makeTree() {
+  const g = new THREE.Group();
+  // trunk
+  g.add(box(0.35, 0.9, 0.35, C.trunk, 0, 0.45, 0));
+  // layered cones as box pyramids
+  const layers = [
+    { y: 1.1, s: 1.4, c: C.treeDark },
+    { y: 1.7, s: 1.1, c: C.treeGreen },
+    { y: 2.2, s: 0.8, c: C.treeGreen },
+    { y: 2.6, s: 0.5, c: 0x2ecf6a },
+  ];
+  layers.forEach((L) => {
+    g.add(box(L.s, 0.55, L.s, L.c, 0, L.y, 0));
+  });
+  // snow cap
+  g.add(box(0.35, 0.2, 0.35, C.white, 0, 2.9, 0));
+  g.userData.radius = 0.7;
+  g.userData.type = 'tree';
+  return g;
+}
+
+function makePerson() {
+  const g = new THREE.Group();
+  const colors = [C.red, C.orange, C.purple, C.pink, 0x55ffaa, C.yellow];
+  const suit = colors[Math.floor(Math.random() * colors.length)];
+  // skis
+  g.add(box(0.15, 0.05, 1.0, C.white, -0.15, 0.04, 0));
+  g.add(box(0.15, 0.05, 1.0, C.white, 0.15, 0.04, 0));
+  // body
+  g.add(box(0.35, 0.45, 0.25, suit, 0, 0.55, 0));
+  // head
+  g.add(box(0.28, 0.28, 0.28, C.skin, 0, 0.95, 0));
+  // hat
+  g.add(box(0.32, 0.14, 0.32, colors[(Math.floor(Math.random() * colors.length))], 0, 1.15, 0));
+  // poles
+  g.add(box(0.04, 0.6, 0.04, C.black, -0.3, 0.4, 0.1));
+  g.add(box(0.04, 0.6, 0.04, C.black, 0.3, 0.4, 0.1));
+  g.userData.radius = 0.5;
+  g.userData.type = 'person';
+  g.userData.drift = (Math.random() - 0.5) * 0.8;
+  return g;
+}
+
+function makeJump() {
+  const g = new THREE.Group();
+  // ramp wedge approximated with boxes
+  const ramp = box(3.2, 0.15, 2.8, 0xa8c8e0, 0, 0.2, 0);
+  ramp.rotation.x = -0.35;
+  g.add(ramp);
+  // side walls
+  g.add(box(0.2, 0.6, 2.5, C.pink, -1.55, 0.35, 0));
+  g.add(box(0.2, 0.6, 2.5, C.pink, 1.55, 0.35, 0));
+  // flags
+  g.add(box(0.08, 1.2, 0.08, C.white, -1.55, 0.9, -1));
+  g.add(box(0.08, 1.2, 0.08, C.white, 1.55, 0.9, -1));
+  g.add(box(0.5, 0.3, 0.08, C.yellow, -1.55, 1.4, -1));
+  g.add(box(0.5, 0.3, 0.08, C.yellow, 1.55, 1.4, -1));
+  g.userData.radius = 1.4;
+  g.userData.type = 'jump';
+  g.userData.used = false;
+  return g;
+}
+
+// Snow particles
+const flakes = [];
+const flakeGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+const flakeMat = mat(C.white);
+for (let i = 0; i < 80; i++) {
+  const f = new THREE.Mesh(flakeGeo, flakeMat);
+  f.position.set(
+    (Math.random() - 0.5) * 30,
+    Math.random() * 12,
+    -Math.random() * 80
+  );
+  f.userData.fall = 1 + Math.random() * 3;
+  f.userData.drift = (Math.random() - 0.5) * 2;
+  track.add(f);
+  flakes.push(f);
+}
+
+// ─── Spawning ───────────────────────────────────────────────
+function clearObjects() {
+  for (const o of state.objects) {
+    track.remove(o.mesh);
+  }
+  state.objects = [];
+  state.nextSpawnZ = -30;
+}
+
+function spawnAhead() {
+  const z = state.nextSpawnZ;
+  const diff = state.difficulty;
+
+  // Trees — denser with level
+  const treeCount = 1 + Math.floor(Math.random() * (1 + Math.min(3, diff * 0.45)));
+  for (let i = 0; i < treeCount; i++) {
+    const mesh = makeTree();
+    const x = (Math.random() - 0.5) * (SLOPE_W - 4);
+    mesh.position.set(x, 0, z - Math.random() * 8);
+    track.add(mesh);
+    state.objects.push({ mesh, type: 'tree', x, z: mesh.position.z, radius: 0.75 });
+  }
+
+  // People
+  if (Math.random() < 0.25 + diff * 0.04) {
+    const mesh = makePerson();
+    const x = (Math.random() - 0.5) * (SLOPE_W - 5);
+    mesh.position.set(x, 0, z - Math.random() * 6);
+    track.add(mesh);
+    state.objects.push({
+      mesh, type: 'person', x, z: mesh.position.z, radius: 0.55, drift: mesh.userData.drift,
+    });
+  }
+
+  // Jump ramp
+  if (Math.random() < 0.18 + Math.min(0.12, diff * 0.02)) {
+    const mesh = makeJump();
+    const x = (Math.random() - 0.5) * (SLOPE_W - 8);
+    mesh.position.set(x, 0, z - 4);
+    track.add(mesh);
+    state.objects.push({ mesh, type: 'jump', x, z: mesh.position.z, radius: 1.5, used: false });
+  }
+
+  // Gap shrinks as difficulty rises
+  const gap = Math.max(7, 17 - diff * 0.9) + Math.random() * 6;
+  state.nextSpawnZ = z - gap;
+}
+
+// ─── Game flow ──────────────────────────────────────────────
+function updateHigh() {
+  if (state.score > state.highScore) {
+    state.highScore = state.score;
+    localStorage.setItem('slopeRacerHi', String(state.highScore));
+  }
+  menuHigh.textContent = `HI-SCORE ${state.highScore}`;
+  goHigh.textContent = `HI-SCORE ${state.highScore}`;
+}
+
+function startGame() {
+  state.mode = 'play';
+  state.score = 0;
+  state.lives = 3;
+  state.level = 1;
+  state.levelTimer = 0;
+  state.speed = speedForLevel(1);
+  state.playerX = 0;
+  state.playerY = 0;
+  state.velY = 0;
+  state.onGround = true;
+  state.airTime = 0;
+  state.invincible = 0;
+  state.distance = 0;
+  state.difficulty = 1;
+  state.crashCooldown = 0;
+  state.levelBannerTimer = 0;
+  state.nextSpawnZ = -25;
+  player.position.set(0, 0, 0);
+  player.rotation.set(0, 0, 0);
+  levelUpBanner.style.display = 'none';
+  clearObjects();
+  for (let i = 0; i < 8; i++) spawnAhead();
+
+  menu.classList.add('hidden');
+  gameover.classList.add('hidden');
+  hud.style.display = 'flex';
+  updateHUD();
+  state.clock.start();
+}
+
+function endGame() {
+  state.mode = 'gameover';
+  updateHigh();
+  finalScoreEl.textContent = String(Math.floor(state.score));
+  hud.style.display = 'none';
+  airBanner.style.display = 'none';
+  levelUpBanner.style.display = 'none';
+  gameover.classList.remove('hidden');
+}
+
+function showMenu() {
+  state.mode = 'menu';
+  updateHigh();
+  hud.style.display = 'none';
+  airBanner.style.display = 'none';
+  levelUpBanner.style.display = 'none';
+  gameover.classList.add('hidden');
+  menu.classList.remove('hidden');
+  clearObjects();
+}
+
+function levelUp() {
+  if (state.level >= MAX_LEVEL) return;
+  state.level += 1;
+  state.levelTimer = 0;
+  state.speed = speedForLevel(state.level);
+  state.difficulty = state.level;
+  state.levelBannerTimer = 2.2;
+  levelUpBanner.style.display = 'block';
+  levelUpBanner.innerHTML = `LEVEL ${state.level}!<br><span style="font-size:10px;color:#ffee00">SPEED UP</span>`;
+  updateHUD();
+}
+
+function crash() {
+  if (state.invincible > 0 || state.crashCooldown > 0) return;
+  state.lives -= 1;
+  state.crashCooldown = 1.2;
+  state.invincible = 1.5;
+  // brief wobble only — speed stays tied to level
+  state.playerY = 0;
+  state.velY = 0;
+  state.onGround = true;
+  airBanner.style.display = 'none';
+
+  crashFlash.style.opacity = '0.55';
+  setTimeout(() => { crashFlash.style.opacity = '0'; }, 180);
+
+  player.rotation.z = (Math.random() - 0.5) * 0.8;
+
+  updateHUD();
+  if (state.lives <= 0) {
+    setTimeout(endGame, 400);
+  }
+}
+
+function updateHUD() {
+  scoreEl.textContent = String(Math.floor(state.score));
+  livesEl.textContent = '♥'.repeat(Math.max(0, state.lives)) + '♡'.repeat(Math.max(0, 3 - state.lives));
+  speedLabel.textContent = String(Math.floor(state.speed));
+  levelLabel.textContent = String(state.level);
+}
+
+// ─── Input ──────────────────────────────────────────────────
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') { state.keys.left = true; e.preventDefault(); }
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') { state.keys.right = true; e.preventDefault(); }
+  if (e.code === 'Enter' || e.code === 'Space') {
+    if (state.mode === 'menu') startGame();
+    else if (state.mode === 'gameover') startGame();
+    e.preventDefault();
+  }
+  if (e.code === 'Escape' && state.mode === 'play') {
+    endGame();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.left = false;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
+});
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('menu-btn').addEventListener('click', showMenu);
+
+// ─── Resize ─────────────────────────────────────────────────
+function onResize() {
+  const w = Math.floor(window.innerWidth / PIXEL_SCALE);
+  const h = Math.floor(window.innerHeight / PIXEL_SCALE);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+}
+window.addEventListener('resize', onResize);
+
+// ─── Main loop ──────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(state.clock.getDelta(), 0.05);
+  state.anim += dt;
+
+  if (state.mode === 'play') {
+    tickPlay(dt);
+  } else {
+    // idle bob on menu
+    player.position.set(0, Math.sin(state.anim * 2) * 0.15, 0);
+    player.rotation.y = Math.sin(state.anim * 0.8) * 0.3;
+    camera.position.set(0, 9.5, 13);
+    camera.lookAt(0, -1.5, -18);
+    // gentle mountain drift on menu
+    scrollMountains(8 * dt);
+  }
+
+  // snow flakes always
+  for (const f of flakes) {
+    f.position.y -= f.userData.fall * dt;
+    f.position.x += f.userData.drift * dt;
+    f.position.z += (state.mode === 'play' ? state.speed * 0.35 : 5) * dt;
+    if (f.position.y < 0) {
+      f.position.y = 10 + Math.random() * 5;
+      f.position.x = state.playerX + (Math.random() - 0.5) * 28;
+      f.position.z = -20 - Math.random() * 60;
+    }
+    if (f.position.z > 20) f.position.z = -80;
+  }
+
+  // blink invincibility
+  if (state.mode === 'play' && state.invincible > 0) {
+    player.visible = Math.floor(state.anim * 12) % 2 === 0;
+  } else {
+    player.visible = true;
+  }
+
+  renderer.render(scene, camera);
+}
+
+function scrollMountains(baseMove) {
+  for (const layer of mountainLayers) {
+    const m = baseMove * layer.speed;
+    for (const mesh of layer.meshes) {
+      mesh.position.z += m;
+      if (mesh.position.z > layer.wrapMax) {
+        mesh.position.z -= layer.span;
+      }
+    }
+  }
+}
+
+function tickPlay(dt) {
+  // Level timer — every 30s go faster
+  state.levelTimer += dt;
+  if (state.levelTimer >= LEVEL_INTERVAL) {
+    levelUp();
+  }
+  if (state.levelBannerTimer > 0) {
+    state.levelBannerTimer -= dt;
+    if (state.levelBannerTimer <= 0) levelUpBanner.style.display = 'none';
+  }
+
+  // Speed locked to level
+  state.speed = speedForLevel(state.level);
+  state.difficulty = state.level;
+
+  // Steering only
+  const steerSpeed = 18 + state.speed * 0.12;
+  if (state.keys.left) state.playerX -= steerSpeed * dt;
+  if (state.keys.right) state.playerX += steerSpeed * dt;
+  const half = SLOPE_W / 2 - 1.2;
+  state.playerX = Math.max(-half, Math.min(half, state.playerX));
+
+  // Lean
+  const targetLean = (state.keys.left ? 0.35 : 0) + (state.keys.right ? -0.35 : 0);
+  player.rotation.z += (targetLean - player.rotation.z) * 8 * dt;
+  player.rotation.x = state.onGround ? 0 : -0.25;
+
+  // Vertical / jump physics
+  if (!state.onGround) {
+    state.velY -= 22 * dt;
+    state.playerY += state.velY * dt;
+    state.airTime += dt;
+    const airPts = state.airTime * state.speed * 0.8 * dt * 10;
+    state.score += airPts;
+    airBanner.style.display = 'block';
+    airBanner.textContent = `AIR +${Math.floor(state.airTime * state.speed * 0.5)}`;
+    if (state.playerY <= 0) {
+      state.playerY = 0;
+      state.velY = 0;
+      state.onGround = true;
+      if (state.airTime > 0.35) {
+        const bonus = Math.floor(state.airTime * state.speed * 2.5);
+        state.score += bonus;
+        comboEl.textContent = `LANDING +${bonus}`;
+        setTimeout(() => { if (comboEl.textContent.startsWith('LANDING')) comboEl.textContent = ''; }, 900);
+      }
+      state.airTime = 0;
+      airBanner.style.display = 'none';
+    }
+  }
+
+  player.position.x = state.playerX;
+  player.position.y = state.playerY;
+  player.position.z = 0;
+
+  const move = state.speed * dt;
+  state.distance += move;
+
+  // Score scales with level speed
+  state.score += (state.speed * 0.4) * dt;
+
+  // Move stripes / lane markers
+  for (const s of stripes) {
+    s.position.z += move;
+    if (s.position.z > 18) s.position.z -= 170;
+  }
+
+  // Parallax mountains
+  scrollMountains(move);
+
+  // Move & collide objects
+  const px = state.playerX;
+  const pz = 0;
+  const pr = 0.45;
+
+  for (let i = state.objects.length - 1; i >= 0; i--) {
+    const o = state.objects[i];
+    o.z += move;
+    o.mesh.position.z = o.z;
+
+    if (o.type === 'person' && o.drift) {
+      o.x += o.drift * dt;
+      if (Math.abs(o.x) > SLOPE_W / 2 - 2) o.drift *= -1;
+      o.mesh.position.x = o.x;
+      o.mesh.rotation.y = Math.sin(state.anim * 4 + i) * 0.15;
+    }
+
+    if (o.z > -3 && o.z < 2.5) {
+      const dx = o.x - px;
+      const dz = o.z - pz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < o.radius + pr) {
+        if (o.type === 'jump' && state.onGround && !o.used) {
+          o.used = true;
+          o.mesh.userData.used = true;
+          state.onGround = false;
+          state.velY = 8 + state.speed * 0.12;
+          state.airTime = 0;
+          const jumpPts = Math.floor(state.speed * 1.2);
+          state.score += jumpPts;
+          comboEl.textContent = `JUMP +${jumpPts}`;
+          setTimeout(() => { if (comboEl.textContent.startsWith('JUMP')) comboEl.textContent = ''; }, 700);
+        } else if ((o.type === 'tree' || o.type === 'person') && state.playerY < 1.1) {
+          crash();
+        }
+      }
+    }
+
+    if (o.z > 25) {
+      track.remove(o.mesh);
+      state.objects.splice(i, 1);
+    }
+  }
+
+  let minZ = 0;
+  for (const o of state.objects) if (o.z < minZ) minZ = o.z;
+  while (minZ > -95 || state.objects.length < 8) {
+    spawnAhead();
+    minZ = state.nextSpawnZ;
+    if (state.objects.length > 120) break;
+  }
+
+  if (state.invincible > 0) state.invincible -= dt;
+  if (state.crashCooldown > 0) state.crashCooldown -= dt;
+
+  // Camera: high chase, looking down the pitched run
+  const camTargetX = state.playerX * 0.5;
+  camera.position.x += (camTargetX - camera.position.x) * 4 * dt;
+  camera.position.y = 9.2 + state.playerY * 0.35;
+  camera.position.z = 12.5;
+  // Look toward a point lower & further down the slope for downhill perspective
+  camera.lookAt(state.playerX * 0.25, -2.2 + state.playerY * 0.4, -22);
+
+  scene.fog.density = 0.01 + state.level * 0.0003;
+
+  armL.rotation.x = Math.sin(state.anim * 8) * 0.15;
+  armR.rotation.x = Math.sin(state.anim * 8 + 1) * 0.15;
+
+  updateHUD();
+}
+
+// Kick off
+updateHigh();
+state.clock.start();
+animate();
+  </script>
+</body>
+</html>
