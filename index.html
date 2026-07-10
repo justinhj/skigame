@@ -267,6 +267,7 @@
     <div class="left">
       <div>SCORE <span id="score">0</span></div>
       <div id="lives">LIVES <span>♥♥♥</span></div>
+      <div style="font-size:9px;margin-top:4px;color:#ff6b9d">HEALTH <span id="health">100</span>%</div>
     </div>
     <div class="center">
       <div id="combo"></div>
@@ -428,6 +429,7 @@ const state = {
   mode: 'menu', // menu | play | gameover
   score: 0,
   lives: 3,
+  health: 100,
   highScore: parseInt(localStorage.getItem('slopeRacerHi') || '0', 10),
   level: 1,
   levelTimer: 0,
@@ -437,6 +439,8 @@ const state = {
   velY: 0,
   onGround: true,
   airTime: 0,
+  playerYaw: 0,
+  cumulativeAirRotation: 0,
   invincible: 0,
   distance: 0,
   difficulty: 1,
@@ -546,10 +550,11 @@ for (const side of [-1, 1]) {
 }
 
 // Sky gradient via large sphere (world space, not pitched)
-const skyGeo = new THREE.SphereGeometry(160, 16, 12);
+const skyGeo = new THREE.SphereGeometry(260, 16, 12);
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide,
   fog: false,
+  depthWrite: false,
   uniforms: {
     topColor: { value: new THREE.Color(C.skyTop) },
     bottomColor: { value: new THREE.Color(C.skyBot) },
@@ -594,10 +599,9 @@ function makePeakMesh(w, h, col) {
     color: col,
     side: THREE.DoubleSide,
     fog: false,
-    depthWrite: false,
+    depthWrite: true,
   });
   const mesh = new THREE.Mesh(geo, m);
-  mesh.renderOrder = -5;
   return mesh;
 }
 
@@ -642,6 +646,37 @@ buildMountainLayer({
   side: 1, xBase: 16.5, zStart: 4, count: 14, spacing: 11,
   speed: 0.45, colors: midColors, sizeScale: 1.45, yBase: 0.15,
 });
+
+// Far background mountain range sitting on the horizon
+const bgMountainGroup = new THREE.Group();
+track.add(bgMountainGroup);
+
+const bgColors = [
+  0x1f143a, // deep retro purple
+  0x2b1842, // dark violet
+  0x140c26, // very dark purple
+  0x351642, // rich dark magenta
+  0x251238, // deep grape
+];
+
+const bgPeaks = [];
+const peakCount = 18;
+const bgSpacing = 16;
+for (let i = 0; i < peakCount; i++) {
+  const w = 45 + Math.random() * 25;
+  const h = 18 + Math.random() * 14;
+  const col = bgColors[i % bgColors.length];
+  const mesh = makePeakMesh(w, h, col);
+  
+  // Center range around X = 0, placed far back in Z (horizon)
+  const x = (i - (peakCount - 1) / 2) * bgSpacing + (Math.random() - 0.5) * 6;
+  const z = -175 - Math.random() * 15;
+  const y = -0.5; // sit slightly low
+  mesh.position.set(x, y, z);
+  bgMountainGroup.add(mesh);
+  bgPeaks.push(mesh);
+}
+
 
 // ─── Cute player skier (faces downhill = -Z, away from camera) ─
 const player = new THREE.Group();
@@ -828,7 +863,7 @@ function spawnAhead() {
   }
 
   // Jump ramp
-  if (Math.random() < 0.18 + Math.min(0.12, diff * 0.02)) {
+  if (Math.random() < 0.45 + Math.min(0.15, diff * 0.02)) {
     const mesh = makeJump();
     const x = (Math.random() - 0.5) * (SLOPE_W - 8);
     mesh.position.set(x, 0, z - 4);
@@ -855,6 +890,7 @@ function startGame() {
   state.mode = 'play';
   state.score = 0;
   state.lives = 3;
+  state.health = 100;
   state.level = 1;
   state.levelTimer = 0;
   state.speed = speedForLevel(1);
@@ -863,6 +899,8 @@ function startGame() {
   state.velY = 0;
   state.onGround = true;
   state.airTime = 0;
+  state.playerYaw = 0;
+  state.cumulativeAirRotation = 0;
   state.invincible = 0;
   state.distance = 0;
   state.difficulty = 1;
@@ -871,6 +909,7 @@ function startGame() {
   state.nextSpawnZ = -25;
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
+  playerMesh.rotation.y = Math.PI;
   levelUpBanner.style.display = 'none';
   clearObjects();
   for (let i = 0; i < 8; i++) spawnAhead();
@@ -915,15 +954,28 @@ function levelUp() {
   updateHUD();
 }
 
-function crash() {
+function crash(loseLife = true, healthDamage = 0) {
   if (state.invincible > 0 || state.crashCooldown > 0) return;
-  state.lives -= 1;
+  
+  if (loseLife) {
+    state.lives -= 1;
+  }
+  if (healthDamage > 0) {
+    state.health -= healthDamage;
+    if (state.health <= 0) {
+      state.lives -= 1;
+      state.health = 100;
+    }
+  }
+
   state.crashCooldown = 1.2;
   state.invincible = 1.5;
   // brief wobble only — speed stays tied to level
   state.playerY = 0;
   state.velY = 0;
   state.onGround = true;
+  state.playerYaw = 0;
+  playerMesh.rotation.y = Math.PI;
   airBanner.style.display = 'none';
 
   crashFlash.style.opacity = '0.55';
@@ -942,6 +994,10 @@ function updateHUD() {
   livesEl.textContent = '♥'.repeat(Math.max(0, state.lives)) + '♡'.repeat(Math.max(0, 3 - state.lives));
   speedLabel.textContent = String(Math.floor(state.speed));
   levelLabel.textContent = String(state.level);
+  const healthEl = document.getElementById('health');
+  if (healthEl) {
+    healthEl.textContent = String(Math.max(0, Math.floor(state.health)));
+  }
 }
 
 // ─── Input ──────────────────────────────────────────────────
@@ -1044,12 +1100,34 @@ function tickPlay(dt) {
   state.speed = speedForLevel(state.level);
   state.difficulty = state.level;
 
-  // Steering only
-  const steerSpeed = 18 + state.speed * 0.12;
-  if (state.keys.left) state.playerX -= steerSpeed * dt;
-  if (state.keys.right) state.playerX += steerSpeed * dt;
-  const half = SLOPE_W / 2 - 1.2;
-  state.playerX = Math.max(-half, Math.min(half, state.playerX));
+  // Steering on ground, rotating in air
+  if (state.onGround) {
+    const steerSpeed = 18 + state.speed * 0.12;
+    if (state.keys.left) state.playerX -= steerSpeed * dt;
+    if (state.keys.right) state.playerX += steerSpeed * dt;
+    const half = SLOPE_W / 2 - 1.2;
+    state.playerX = Math.max(-half, Math.min(half, state.playerX));
+  } else {
+    const rotSpeed = 5.0; // radians per second
+    let yawChange = 0;
+    if (state.keys.left) yawChange += rotSpeed * dt;
+    if (state.keys.right) yawChange -= rotSpeed * dt;
+    
+    if (yawChange !== 0) {
+      state.playerYaw += yawChange;
+      state.cumulativeAirRotation += Math.abs(yawChange);
+      // score more points as you rotate
+      state.score += Math.abs(yawChange) * 20;
+    }
+  }
+
+  // Keep playerYaw normalized to [-PI, PI]
+  state.playerYaw = (state.playerYaw + Math.PI) % (2 * Math.PI);
+  if (state.playerYaw < 0) state.playerYaw += 2 * Math.PI;
+  state.playerYaw -= Math.PI;
+
+  // Update player mesh rotation Y
+  playerMesh.rotation.y = Math.PI + state.playerYaw;
 
   // Lean
   const targetLean = (state.keys.left ? 0.35 : 0) + (state.keys.right ? -0.35 : 0);
@@ -1063,20 +1141,62 @@ function tickPlay(dt) {
     state.airTime += dt;
     const airPts = state.airTime * state.speed * 0.8 * dt * 10;
     state.score += airPts;
+    
     airBanner.style.display = 'block';
-    airBanner.textContent = `AIR +${Math.floor(state.airTime * state.speed * 0.5)}`;
+    const deg = Math.round(state.cumulativeAirRotation * (180 / Math.PI));
+    airBanner.textContent = `SPIN: ${deg}° | AIR +${Math.floor(state.airTime * state.speed * 0.5)}`;
+
     if (state.playerY <= 0) {
       state.playerY = 0;
       state.velY = 0;
       state.onGround = true;
-      if (state.airTime > 0.35) {
-        const bonus = Math.floor(state.airTime * state.speed * 2.5);
-        state.score += bonus;
-        comboEl.textContent = `LANDING +${bonus}`;
-        setTimeout(() => { if (comboEl.textContent.startsWith('LANDING')) comboEl.textContent = ''; }, 900);
-      }
-      state.airTime = 0;
       airBanner.style.display = 'none';
+
+      // Landing check: facing backwards or forwards within 5 degrees
+      const yawDeg = state.playerYaw * 180 / Math.PI;
+      const distToForwards = Math.abs(yawDeg);
+      const distToBackwards = 180 - Math.abs(yawDeg);
+      const maxError = 5; // 5 degrees
+
+      if (distToForwards <= maxError) {
+        // Safe forward landing
+        state.playerYaw = 0;
+        playerMesh.rotation.y = Math.PI;
+        
+        const airBonus = state.airTime > 0.35 ? Math.floor(state.airTime * state.speed * 2.5) : 0;
+        const spinBonus = Math.floor(state.cumulativeAirRotation * 50);
+        const totalBonus = airBonus + spinBonus;
+        
+        if (totalBonus > 0) {
+          state.score += totalBonus;
+          if (spinBonus > 0) {
+            comboEl.textContent = `SPIN LANDING +${totalBonus}`;
+          } else {
+            comboEl.textContent = `LANDING +${totalBonus}`;
+          }
+          setTimeout(() => { if (comboEl.textContent.startsWith('SPIN') || comboEl.textContent.startsWith('LANDING')) comboEl.textContent = ''; }, 1200);
+        }
+      } else if (distToBackwards <= maxError) {
+        // Safe backward landing
+        state.playerYaw = Math.PI;
+        playerMesh.rotation.y = 2 * Math.PI;
+        
+        const airBonus = state.airTime > 0.35 ? Math.floor(state.airTime * state.speed * 2.5) : 0;
+        const spinBonus = Math.floor(state.cumulativeAirRotation * 50) + 150; // extra bonus for landing backward
+        const totalBonus = airBonus + spinBonus;
+        
+        state.score += totalBonus;
+        comboEl.textContent = `BACKWARD LANDING +${totalBonus}`;
+        setTimeout(() => { if (comboEl.textContent.startsWith('BACKWARD')) comboEl.textContent = ''; }, 1200);
+      } else {
+        // Crash / bad landing: lose 10% health
+        crash(false, 10);
+        comboEl.textContent = `WIPEOUT! BAD LANDING`;
+        setTimeout(() => { if (comboEl.textContent.startsWith('WIPEOUT')) comboEl.textContent = ''; }, 1200);
+      }
+
+      state.airTime = 0;
+      state.cumulativeAirRotation = 0;
     }
   }
 
@@ -1098,6 +1218,7 @@ function tickPlay(dt) {
 
   // Parallax mountains
   scrollMountains(move);
+  bgMountainGroup.position.x = state.playerX * 0.45;
 
   // Move & collide objects
   const px = state.playerX;
@@ -1127,6 +1248,7 @@ function tickPlay(dt) {
           state.onGround = false;
           state.velY = 8 + state.speed * 0.12;
           state.airTime = 0;
+          state.cumulativeAirRotation = 0;
           const jumpPts = Math.floor(state.speed * 1.2);
           state.score += jumpPts;
           comboEl.textContent = `JUMP +${jumpPts}`;
