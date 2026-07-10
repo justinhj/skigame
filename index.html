@@ -267,7 +267,6 @@
     <div class="left">
       <div>SCORE <span id="score">0</span></div>
       <div id="lives">LIVES <span>♥♥♥</span></div>
-      <div style="font-size:9px;margin-top:4px;color:#ff6b9d">HEALTH <span id="health">100</span>%</div>
     </div>
     <div class="center">
       <div id="combo"></div>
@@ -429,7 +428,6 @@ const state = {
   mode: 'menu', // menu | play | gameover
   score: 0,
   lives: 3,
-  health: 100,
   highScore: parseInt(localStorage.getItem('slopeRacerHi') || '0', 10),
   level: 1,
   levelTimer: 0,
@@ -605,13 +603,51 @@ function makePeakMesh(w, h, col) {
   return mesh;
 }
 
+function makeEvergreenMesh(w, h, col) {
+  const shape = new THREE.Shape();
+  // Simple evergreen tree silhouette: a trunk and three layers of triangles
+  // Trunk
+  const tw = w * 0.15;
+  const th = h * 0.15;
+  shape.moveTo(-tw / 2, 0);
+  shape.lineTo(-tw / 2, th);
+  // Bottom tier
+  shape.lineTo(-w / 2, th);
+  shape.lineTo(-w * 0.2, h * 0.45);
+  // Middle tier
+  shape.lineTo(-w * 0.35, h * 0.45);
+  shape.lineTo(-w * 0.1, h * 0.75);
+  // Top tier
+  shape.lineTo(-w * 0.2, h * 0.75);
+  shape.lineTo(0, h);
+  // Mirror back down
+  shape.lineTo(w * 0.2, h * 0.75);
+  shape.lineTo(w * 0.1, h * 0.75);
+  shape.lineTo(w * 0.35, h * 0.45);
+  shape.lineTo(w * 0.2, h * 0.45);
+  shape.lineTo(w / 2, th);
+  shape.lineTo(tw / 2, th);
+  shape.lineTo(tw / 2, 0);
+  shape.closePath();
+
+  const geo = new THREE.ShapeGeometry(shape);
+  const m = new THREE.MeshBasicMaterial({
+    color: col,
+    side: THREE.DoubleSide,
+    fog: false,
+    depthWrite: true,
+  });
+  const mesh = new THREE.Mesh(geo, m);
+  return mesh;
+}
+
 function buildMountainLayer({ side, xBase, zStart, count, spacing, speed, colors, sizeScale, yBase }) {
   const meshes = [];
   for (let i = 0; i < count; i++) {
     const w = (4 + Math.random() * 7) * sizeScale;
     const h = (3 + Math.random() * 6) * sizeScale;
     const col = colors[i % colors.length];
-    const mesh = makePeakMesh(w, h, col);
+    const mesh = makeEvergreenMesh(w, h, col);
     const xJitter = (Math.random() - 0.5) * 4;
     const x = side * (xBase + Math.random() * 6) + xJitter;
     const z = zStart - i * spacing - Math.random() * spacing * 0.4;
@@ -626,25 +662,25 @@ function buildMountainLayer({ side, xBase, zStart, count, spacing, speed, colors
   mountainLayers.push({ meshes, speed, wrapMin, wrapMax, span: wrapMax - wrapMin });
 }
 
-// Far slow layer — small distant peaks along both sides
-const farColors = [0x5a7aaa, 0x4a6a9a, 0x3d5f8a, 0x6a88aa];
-const midColors = [0x6a8aba, 0x7a9aca, 0x5a7aaa, 0x8899bb];
+// Side forest layers — simple dark evergreen type trees
+const evergreenColorsFar = [0x0b321a, 0x082c16, 0x092513];
+const evergreenColorsMid = [0x0d5c2e, 0x114f29, 0x0a4320];
 buildMountainLayer({
   side: -1, xBase: 20, zStart: 10, count: 18, spacing: 9,
-  speed: 0.22, colors: farColors, sizeScale: 1.1, yBase: 0.2,
+  speed: 0.22, colors: evergreenColorsFar, sizeScale: 1.1, yBase: 0.2,
 });
 buildMountainLayer({
   side: 1, xBase: 20, zStart: 6, count: 18, spacing: 9,
-  speed: 0.22, colors: farColors, sizeScale: 1.1, yBase: 0.2,
+  speed: 0.22, colors: evergreenColorsFar, sizeScale: 1.1, yBase: 0.2,
 });
 // Mid layer — a bit closer / larger / faster
 buildMountainLayer({
   side: -1, xBase: 16.5, zStart: 8, count: 14, spacing: 11,
-  speed: 0.45, colors: midColors, sizeScale: 1.45, yBase: 0.15,
+  speed: 0.45, colors: evergreenColorsMid, sizeScale: 1.45, yBase: 0.15,
 });
 buildMountainLayer({
   side: 1, xBase: 16.5, zStart: 4, count: 14, spacing: 11,
-  speed: 0.45, colors: midColors, sizeScale: 1.45, yBase: 0.15,
+  speed: 0.45, colors: evergreenColorsMid, sizeScale: 1.45, yBase: 0.15,
 });
 
 // Far background mountain range sitting on the horizon
@@ -890,7 +926,6 @@ function startGame() {
   state.mode = 'play';
   state.score = 0;
   state.lives = 3;
-  state.health = 100;
   state.level = 1;
   state.levelTimer = 0;
   state.speed = speedForLevel(1);
@@ -954,20 +989,10 @@ function levelUp() {
   updateHUD();
 }
 
-function crash(loseLife = true, healthDamage = 0) {
+function crash() {
   if (state.invincible > 0 || state.crashCooldown > 0) return;
   
-  if (loseLife) {
-    state.lives -= 1;
-  }
-  if (healthDamage > 0) {
-    state.health -= healthDamage;
-    if (state.health <= 0) {
-      state.lives -= 1;
-      state.health = 100;
-    }
-  }
-
+  state.lives -= 1;
   state.crashCooldown = 1.2;
   state.invincible = 1.5;
   // brief wobble only — speed stays tied to level
@@ -994,10 +1019,6 @@ function updateHUD() {
   livesEl.textContent = '♥'.repeat(Math.max(0, state.lives)) + '♡'.repeat(Math.max(0, 3 - state.lives));
   speedLabel.textContent = String(Math.floor(state.speed));
   levelLabel.textContent = String(state.level);
-  const healthEl = document.getElementById('health');
-  if (healthEl) {
-    healthEl.textContent = String(Math.max(0, Math.floor(state.health)));
-  }
 }
 
 // ─── Input ──────────────────────────────────────────────────
@@ -1108,7 +1129,7 @@ function tickPlay(dt) {
     const half = SLOPE_W / 2 - 1.2;
     state.playerX = Math.max(-half, Math.min(half, state.playerX));
   } else {
-    const rotSpeed = 5.0; // radians per second
+    const rotSpeed = 7.5; // radians per second
     let yawChange = 0;
     if (state.keys.left) yawChange += rotSpeed * dt;
     if (state.keys.right) yawChange -= rotSpeed * dt;
@@ -1156,7 +1177,7 @@ function tickPlay(dt) {
       const yawDeg = state.playerYaw * 180 / Math.PI;
       const distToForwards = Math.abs(yawDeg);
       const distToBackwards = 180 - Math.abs(yawDeg);
-      const maxError = 5; // 5 degrees
+      const maxError = 25; // 25 degrees
 
       if (distToForwards <= maxError) {
         // Safe forward landing
@@ -1189,8 +1210,8 @@ function tickPlay(dt) {
         comboEl.textContent = `BACKWARD LANDING +${totalBonus}`;
         setTimeout(() => { if (comboEl.textContent.startsWith('BACKWARD')) comboEl.textContent = ''; }, 1200);
       } else {
-        // Crash / bad landing: lose 10% health
-        crash(false, 10);
+        // Crash / bad landing: lose 1 life
+        crash();
         comboEl.textContent = `WIPEOUT! BAD LANDING`;
         setTimeout(() => { if (comboEl.textContent.startsWith('WIPEOUT')) comboEl.textContent = ''; }, 1200);
       }
