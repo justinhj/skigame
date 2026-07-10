@@ -1096,6 +1096,35 @@ for (let i = 0; i < 80; i++) {
 }
 
 // ─── Spawning ───────────────────────────────────────────────
+function isNearJump(x, z, jumpX, jumpZ) {
+  // Check against the jump ramp spawned in the current wave
+  if (jumpX !== null && jumpZ !== null) {
+    if (Math.abs(z - jumpZ) < 14 && Math.abs(x - jumpX) < 5) {
+      return true;
+    }
+  }
+  // Check against existing jump ramps on the track
+  for (const o of state.objects) {
+    if (o.type === 'jump') {
+      if (Math.abs(z - o.z) < 14 && Math.abs(x - o.x) < 5) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isJumpNearTree(jx, jz) {
+  for (const o of state.objects) {
+    if (o.type === 'tree') {
+      if (Math.abs(jz - o.z) < 14 && Math.abs(jx - o.x) < 5) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function clearObjects() {
   for (const o of state.objects) {
     track.remove(o.mesh);
@@ -1108,17 +1137,47 @@ function spawnAhead() {
   const z = state.nextSpawnZ;
   const diff = state.difficulty;
 
-  // Trees — denser with level
-  const treeCount = 1 + Math.floor(Math.random() * (1 + Math.min(3, diff * 0.45)));
-  for (let i = 0; i < treeCount; i++) {
-    const mesh = makeTree();
-    const x = (Math.random() - 0.5) * (SLOPE_W - 4);
-    mesh.position.set(x, 0, z - Math.random() * 8);
-    track.add(mesh);
-    state.objects.push({ mesh, type: 'tree', x, z: mesh.position.z, radius: 0.75 });
+  // 1. Pre-determine jump ramp spawning to coordinate spacing
+  let jumpX = null;
+  let jumpZ = null;
+  const willSpawnJump = Math.random() < 0.45 + Math.min(0.15, diff * 0.02);
+  if (willSpawnJump) {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidateX = (Math.random() - 0.5) * (SLOPE_W - 8);
+      const candidateZ = z - 4;
+      if (!isJumpNearTree(candidateX, candidateZ)) {
+        jumpX = candidateX;
+        jumpZ = candidateZ;
+        break;
+      }
+    }
   }
 
-  // People
+  // 2. Trees — denser with level, average count slightly increased
+  const treeCount = 1 + Math.floor(Math.random() * (1.6 + Math.min(3.4, diff * 0.5)));
+  for (let i = 0; i < treeCount; i++) {
+    let treeX = 0;
+    let treeZ = 0;
+    let placed = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidateX = (Math.random() - 0.5) * (SLOPE_W - 4);
+      const candidateZ = z - Math.random() * 8;
+      if (!isNearJump(candidateX, candidateZ, jumpX, jumpZ)) {
+        treeX = candidateX;
+        treeZ = candidateZ;
+        placed = true;
+        break;
+      }
+    }
+    if (placed) {
+      const mesh = makeTree();
+      mesh.position.set(treeX, 0, treeZ);
+      track.add(mesh);
+      state.objects.push({ mesh, type: 'tree', x: treeX, z: treeZ, radius: 0.75 });
+    }
+  }
+
+  // 3. People
   if (Math.random() < 0.25 + diff * 0.04) {
     const mesh = makePerson();
     const x = (Math.random() - 0.5) * (SLOPE_W - 5);
@@ -1129,13 +1188,12 @@ function spawnAhead() {
     });
   }
 
-  // Jump ramp
-  if (Math.random() < 0.45 + Math.min(0.15, diff * 0.02)) {
+  // 4. Actually spawn the pre-determined jump ramp
+  if (jumpX !== null && jumpZ !== null) {
     const mesh = makeJump();
-    const x = (Math.random() - 0.5) * (SLOPE_W - 8);
-    mesh.position.set(x, 0, z - 4);
+    mesh.position.set(jumpX, 0, jumpZ);
     track.add(mesh);
-    state.objects.push({ mesh, type: 'jump', x, z: mesh.position.z, radius: 1.5, used: false });
+    state.objects.push({ mesh, type: 'jump', x: jumpX, z: jumpZ, radius: 1.5, used: false });
   }
 
   // Gap shrinks as difficulty rises
