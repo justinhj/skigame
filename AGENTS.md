@@ -4,13 +4,7 @@ Standalone 80s-style skiing game built with **Three.js**. Everything lives in a 
 
 ## How to run
 
-Serve the folder over HTTP (ES modules + CDN import map need a server):
-
-```bash
-python3 -m http.server 8765
-```
-
-Open `http://localhost:8765`.
+Load the single `index.html` file directly in the browser (e.g. by double-clicking it or using a `file://` path). **Do not start a local web server.**
 
 Three.js is loaded from unpkg via an import map:
 
@@ -221,6 +215,7 @@ Invincibility frames (`state.invincible`) and `crashCooldown` prevent multi-hit 
 
 ## Conventions for changes
 
+- **Do not start a local web server** to run or verify changes; load the single `index.html` file directly in the browser instead.
 - Keep the game a **single standalone HTML file** unless there is a strong reason to split.
 - Prefer adjusting constants and `tickPlay` / `spawnAhead` over adding frameworks.
 - New obstacles: add a factory like `makeTree`, spawn in `spawnAhead`, handle type in the collision loop, parent meshes to **`track`** (not `scene`), remove with `track.remove`.
