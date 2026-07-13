@@ -389,16 +389,24 @@ const finalScoreEl = document.getElementById('final-score');
 const menuHigh = document.getElementById('menu-high');
 const goHigh = document.getElementById('go-high');
 
+// Mobile Detection & Dynamic Help Text
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 // ─── Menu Instructions System ───────────────────────────────
 const instructions = [
   "WELCOME TO SKI GAME",
-  "USE ARROWS OR A/D TO STEER",
+  isMobile ? "SWIPE LEFT & RIGHT TO STEER" : "USE ARROWS OR A/D TO STEER",
   "DODGE TREES & OTHER SKIERS",
   "JUMP RAMPS FOR MASSIVE AIR",
   "AIR TIME & LANDINGS GIVE BONUSES",
   "LEVEL UP EVERY 30S FOR MORE SPEED",
   "3 LIVES - GET THE HI-SCORE!"
 ];
+
+if (isMobile) {
+  const pressKeyEl = document.querySelector('.press-key');
+  if (pressKeyEl) pressKeyEl.textContent = 'TAP SCREEN TO PLAY';
+}
 
 let instructionTimeoutId = null;
 let instructionIndex = 0;
@@ -527,6 +535,8 @@ const state = {
   distance: 0,
   difficulty: 1,
   keys: { left: false, right: false },
+  touchStartX: 0,
+  touchActive: false,
   objects: [],
   nextSpawnZ: -40,
   crashCooldown: 0,
@@ -1298,6 +1308,7 @@ function updateHigh() {
 }
 
 function startGame() {
+  if (state.mode === 'play') return;
   stopInstructions();
   state.mode = 'play';
   state.score = 0;
@@ -1432,6 +1443,57 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.left = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
+});
+
+// Mobile Touch Steering & Start handlers
+window.addEventListener('touchstart', (e) => {
+  sfx.init();
+  
+  if (state.mode === 'menu') {
+    startGame();
+    e.preventDefault();
+    return;
+  }
+  
+  if (state.mode === 'play') {
+    state.touchStartX = e.touches[0].clientX;
+    state.touchActive = true;
+  }
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+  if (state.mode === 'play' && state.touchActive) {
+    const currentX = e.touches[0].clientX;
+    const dx = currentX - state.touchStartX;
+    const threshold = 15;
+    if (dx < -threshold) {
+      state.keys.left = true;
+      state.keys.right = false;
+    } else if (dx > threshold) {
+      state.keys.left = false;
+      state.keys.right = true;
+    } else {
+      state.keys.left = false;
+      state.keys.right = false;
+    }
+    e.preventDefault(); // Prevent page scrolling
+  }
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+  if (state.mode === 'play') {
+    state.keys.left = false;
+    state.keys.right = false;
+    state.touchActive = false;
+  }
+});
+
+window.addEventListener('touchcancel', (e) => {
+  if (state.mode === 'play') {
+    state.keys.left = false;
+    state.keys.right = false;
+    state.touchActive = false;
+  }
 });
 
 menu.addEventListener('click', () => {
