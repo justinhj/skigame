@@ -395,7 +395,7 @@ const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
 // ─── Menu Instructions System ───────────────────────────────
 const instructions = [
   "WELCOME TO SKI GAME",
-  isMobile ? "SWIPE LEFT & RIGHT TO STEER" : "USE ARROWS OR A/D TO STEER",
+  isMobile ? "SWIPE & HOLD TO STEER" : "USE ARROWS OR A/D TO STEER",
   "DODGE TREES & OTHER SKIERS",
   "JUMP RAMPS FOR MASSIVE AIR",
   "AIR TIME & LANDINGS GIVE BONUSES",
@@ -537,6 +537,7 @@ const state = {
   keys: { left: false, right: false },
   touchStartX: 0,
   touchActive: false,
+  touchSteerValue: 0,
   objects: [],
   nextSpawnZ: -40,
   crashCooldown: 0,
@@ -1330,6 +1331,8 @@ function startGame() {
   state.crashCooldown = 0;
   state.levelBannerTimer = 0;
   state.nextSpawnZ = -25;
+  state.touchActive = false;
+  state.touchSteerValue = 0;
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
   playerMesh.rotation.y = Math.PI;
@@ -1456,8 +1459,10 @@ window.addEventListener('touchstart', (e) => {
   }
   
   if (state.mode === 'play') {
-    state.touchStartX = e.touches[0].clientX;
+    if (e.target.tagName === 'BUTTON') return;
     state.touchActive = true;
+    state.touchStartX = e.touches[0].clientX;
+    state.touchSteerValue = 0;
   }
 }, { passive: false });
 
@@ -1465,16 +1470,15 @@ window.addEventListener('touchmove', (e) => {
   if (state.mode === 'play' && state.touchActive) {
     const currentX = e.touches[0].clientX;
     const dx = currentX - state.touchStartX;
-    const threshold = 15;
-    if (dx < -threshold) {
-      state.keys.left = true;
-      state.keys.right = false;
-    } else if (dx > threshold) {
-      state.keys.left = false;
-      state.keys.right = true;
+    const maxSwipeDist = 100; // Pixels for max steer
+    const deadZone = 6;
+    
+    if (Math.abs(dx) < deadZone) {
+      state.touchSteerValue = 0;
     } else {
-      state.keys.left = false;
-      state.keys.right = false;
+      const sign = Math.sign(dx);
+      const scaled = (Math.abs(dx) - deadZone) / (maxSwipeDist - deadZone);
+      state.touchSteerValue = sign * Math.max(0, Math.min(1, scaled));
     }
     e.preventDefault(); // Prevent page scrolling
   }
@@ -1482,17 +1486,15 @@ window.addEventListener('touchmove', (e) => {
 
 window.addEventListener('touchend', (e) => {
   if (state.mode === 'play') {
-    state.keys.left = false;
-    state.keys.right = false;
     state.touchActive = false;
+    state.touchSteerValue = 0;
   }
 });
 
 window.addEventListener('touchcancel', (e) => {
   if (state.mode === 'play') {
-    state.keys.left = false;
-    state.keys.right = false;
     state.touchActive = false;
+    state.touchSteerValue = 0;
   }
 });
 
@@ -1588,18 +1590,22 @@ function tickPlay(dt) {
   state.speed = speedForLevel(state.level);
   state.difficulty = state.level;
 
+  let steerInput = 0;
+  if (state.keys.left) steerInput -= 1;
+  if (state.keys.right) steerInput += 1;
+  if (state.touchActive) {
+    steerInput = state.touchSteerValue;
+  }
+
   // Steering on ground, rotating in air
   if (state.onGround) {
     const steerSpeed = 18 + state.speed * 0.12;
-    if (state.keys.left) state.playerX -= steerSpeed * dt;
-    if (state.keys.right) state.playerX += steerSpeed * dt;
+    state.playerX += steerInput * steerSpeed * dt;
     const half = SLOPE_W / 2 - 1.2;
     state.playerX = Math.max(-half, Math.min(half, state.playerX));
   } else {
     const rotSpeed = 7.5; // radians per second
-    let yawChange = 0;
-    if (state.keys.left) yawChange += rotSpeed * dt;
-    if (state.keys.right) yawChange -= rotSpeed * dt;
+    let yawChange = -steerInput * rotSpeed * dt;
     
     if (yawChange !== 0) {
       state.playerYaw += yawChange;
@@ -1627,7 +1633,7 @@ function tickPlay(dt) {
   playerMesh.rotation.y = Math.PI + state.playerYaw;
 
   // Lean
-  const targetLean = (state.keys.left ? 0.35 : 0) + (state.keys.right ? -0.35 : 0);
+  const targetLean = -steerInput * 0.35;
   player.rotation.z += (targetLean - player.rotation.z) * 8 * dt;
   player.rotation.x = state.onGround ? 0 : -0.25;
 
