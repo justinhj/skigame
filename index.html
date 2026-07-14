@@ -1470,8 +1470,8 @@ window.addEventListener('touchmove', (e) => {
   if (state.mode === 'play' && state.touchActive) {
     const currentX = e.touches[0].clientX;
     const dx = currentX - state.touchStartX;
-    const maxSwipeDist = 100; // Pixels for max steer
-    const deadZone = 6;
+    const maxSwipeDist = 400; // Pixels for max steer (4x less sensitive than 100)
+    const deadZone = 12; // Slightly larger deadzone for precision
     
     if (Math.abs(dx) < deadZone) {
       state.touchSteerValue = 0;
