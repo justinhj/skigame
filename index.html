@@ -17,6 +17,7 @@
       font-family: 'Press Start 2P', monospace;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
+      touch-action: none;
     }
 
     #game-container {
@@ -395,7 +396,7 @@ const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
 // ─── Menu Instructions System ───────────────────────────────
 const instructions = [
   "WELCOME TO SKI GAME",
-  isMobile ? "SWIPE & HOLD TO STEER" : "USE ARROWS OR A/D TO STEER",
+  isMobile ? "DRAG LEFT/RIGHT TO CARVE" : "USE ARROWS OR A/D TO STEER",
   "DODGE TREES & OTHER SKIERS",
   "JUMP RAMPS FOR MASSIVE AIR",
   "AIR TIME & LANDINGS GIVE BONUSES",
@@ -535,9 +536,9 @@ const state = {
   distance: 0,
   difficulty: 1,
   keys: { left: false, right: false },
-  touchStartX: 0,
+  lastPointerX: 0,
+  touchDeltaX: 0,
   touchActive: false,
-  touchSteerValue: 0,
   objects: [],
   nextSpawnZ: -40,
   crashCooldown: 0,
@@ -1332,7 +1333,7 @@ function startGame() {
   state.levelBannerTimer = 0;
   state.nextSpawnZ = -25;
   state.touchActive = false;
-  state.touchSteerValue = 0;
+  state.touchDeltaX = 0;
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
   playerMesh.rotation.y = Math.PI;
@@ -1448,8 +1449,8 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
 });
 
-// Mobile Touch Steering & Start handlers
-window.addEventListener('touchstart', (e) => {
+// Mobile Pointer/Touch Steering & Start handlers
+window.addEventListener('pointerdown', (e) => {
   sfx.init();
   
   if (state.mode === 'menu') {
@@ -1461,40 +1462,30 @@ window.addEventListener('touchstart', (e) => {
   if (state.mode === 'play') {
     if (e.target.tagName === 'BUTTON') return;
     state.touchActive = true;
-    state.touchStartX = e.touches[0].clientX;
-    state.touchSteerValue = 0;
-  }
-}, { passive: false });
-
-window.addEventListener('touchmove', (e) => {
-  if (state.mode === 'play' && state.touchActive) {
-    const currentX = e.touches[0].clientX;
-    const dx = currentX - state.touchStartX;
-    const maxSwipeDist = 400; // Pixels for max steer (4x less sensitive than 100)
-    const deadZone = 12; // Slightly larger deadzone for precision
-    
-    if (Math.abs(dx) < deadZone) {
-      state.touchSteerValue = 0;
-    } else {
-      const sign = Math.sign(dx);
-      const scaled = (Math.abs(dx) - deadZone) / (maxSwipeDist - deadZone);
-      state.touchSteerValue = sign * Math.max(0, Math.min(1, scaled));
-    }
-    e.preventDefault(); // Prevent page scrolling
-  }
-}, { passive: false });
-
-window.addEventListener('touchend', (e) => {
-  if (state.mode === 'play') {
-    state.touchActive = false;
-    state.touchSteerValue = 0;
+    state.lastPointerX = e.clientX;
+    state.touchDeltaX = 0;
   }
 });
 
-window.addEventListener('touchcancel', (e) => {
+window.addEventListener('pointermove', (e) => {
+  if (state.mode === 'play' && state.touchActive) {
+    const currentX = e.clientX;
+    state.touchDeltaX += currentX - state.lastPointerX;
+    state.lastPointerX = currentX;
+  }
+});
+
+window.addEventListener('pointerup', (e) => {
   if (state.mode === 'play') {
     state.touchActive = false;
-    state.touchSteerValue = 0;
+    state.touchDeltaX = 0;
+  }
+});
+
+window.addEventListener('pointercancel', (e) => {
+  if (state.mode === 'play') {
+    state.touchActive = false;
+    state.touchDeltaX = 0;
   }
 });
 
@@ -1593,31 +1584,55 @@ function tickPlay(dt) {
   let steerInput = 0;
   if (state.keys.left) steerInput -= 1;
   if (state.keys.right) steerInput += 1;
-  if (state.touchActive) {
-    steerInput = state.touchSteerValue;
-  }
 
   // Steering on ground, rotating in air
   if (state.onGround) {
     const steerSpeed = 18 + state.speed * 0.12;
-    state.playerX += steerInput * steerSpeed * dt;
+    if (state.touchActive) {
+      const sensitivity = 0.04; // 1 pixel = 0.04 units in 3D world
+      state.playerX += state.touchDeltaX * sensitivity;
+      steerInput = (state.touchDeltaX * sensitivity) / (steerSpeed * dt);
+      steerInput = Math.max(-1.5, Math.min(1.5, steerInput));
+    } else {
+      state.playerX += steerInput * steerSpeed * dt;
+    }
     const half = SLOPE_W / 2 - 1.2;
     state.playerX = Math.max(-half, Math.min(half, state.playerX));
   } else {
     const rotSpeed = 7.5; // radians per second
-    let yawChange = -steerInput * rotSpeed * dt;
-    
-    if (yawChange !== 0) {
-      state.playerYaw += yawChange;
-      state.cumulativeAirRotation += Math.abs(yawChange);
-      // score more points as you rotate
-      state.score += Math.abs(yawChange) * 20;
+    if (state.touchActive) {
+      const airSensitivity = 0.015; // radians per pixel
+      let yawChange = -state.touchDeltaX * airSensitivity;
+      steerInput = (state.touchDeltaX * airSensitivity) / (rotSpeed * dt);
+      steerInput = Math.max(-1.5, Math.min(1.5, steerInput));
+      
+      if (yawChange !== 0) {
+        state.playerYaw += yawChange;
+        state.cumulativeAirRotation += Math.abs(yawChange);
+        state.score += Math.abs(yawChange) * 20;
 
-      if (state.spinSoundCooldown <= 0) {
-        sfx.playSpin();
-        state.spinSoundCooldown = 0.12;
+        if (state.spinSoundCooldown <= 0) {
+          sfx.playSpin();
+          state.spinSoundCooldown = 0.12;
+        }
+      }
+    } else {
+      let yawChange = -steerInput * rotSpeed * dt;
+      if (yawChange !== 0) {
+        state.playerYaw += yawChange;
+        state.cumulativeAirRotation += Math.abs(yawChange);
+        state.score += Math.abs(yawChange) * 20;
+
+        if (state.spinSoundCooldown <= 0) {
+          sfx.playSpin();
+          state.spinSoundCooldown = 0.12;
+        }
       }
     }
+  }
+
+  if (state.touchActive) {
+    state.touchDeltaX = 0; // Consume the delta
   }
 
   if (state.spinSoundCooldown > 0) {
