@@ -372,6 +372,8 @@ const C = {
   blue: 0x3388ff,
   white: 0xffffff,
   black: 0x1a1a2e,
+  boostGreen: 0x55ff77,
+  boostGreenGlow: 0x88ffaa,
 };
 
 // ─── DOM ────────────────────────────────────────────────────
@@ -398,8 +400,8 @@ const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
 const instructions = [
   "WELCOME TO SKI GAME",
   isMobile ? "DRAG LEFT/RIGHT TO CARVE" : "USE ARROWS OR A/D TO STEER",
-  "HOLD & RELEASE SPACE TO JUMP",
-  "RELEASE BEFORE RAMPS = MEGA AIR!",
+  "HOLD SPACE TO CROUCH & CHARGE JUMP",
+  "RELEASE ON GREEN ZONE FOR SUPER JUMP!",
   "DODGE TREES & OTHER SKIERS",
   "AIR TIME & LANDINGS GIVE BONUSES",
   "LEVEL UP EVERY 30S FOR MORE SPEED",
@@ -543,11 +545,13 @@ const state = {
   touchActive: false,
   isCrouching: false,
   crouchAmount: 0,
+  crouchChargeTime: 0,
   isManualJump: false,
   objects: [],
   nextSpawnZ: -40,
   crashCooldown: 0,
   levelBannerTimer: 0,
+  pendingSuperJump: false,
   lastManualJumpTime: -999,
   clock: new THREE.Clock(),
   anim: 0,
@@ -665,6 +669,10 @@ const sfx = {
   },
 
   playJump(superJump = false) {
+    if (superJump) {
+      this.playSuperJump();
+      return;
+    }
     this.init();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -672,17 +680,64 @@ const sfx = {
     const gain = this.ctx.createGain();
     
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(superJump ? 220 : 150, t);
-    osc.frequency.exponentialRampToValueAtTime(superJump ? 1400 : 800, t + (superJump ? 0.35 : 0.25));
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(800, t + 0.25);
     
-    gain.gain.setValueAtTime(superJump ? 0.16 : 0.12, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + (superJump ? 0.35 : 0.25));
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
     
     osc.connect(gain);
     gain.connect(this.ctx.destination);
     
     osc.start(t);
-    osc.stop(t + (superJump ? 0.35 : 0.25));
+    osc.stop(t + 0.25);
+  },
+
+  playSuperJump() {
+    this.init();
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+
+    // Distinct multi-stage futuristic retro power chord sweep
+    // 1. High energy laser pulse
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'square';
+    osc1.frequency.setValueAtTime(260, t);
+    osc1.frequency.exponentialRampToValueAtTime(1600, t + 0.35);
+    gain1.gain.setValueAtTime(0.18, t);
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    osc1.connect(gain1);
+    gain1.connect(this.ctx.destination);
+    osc1.start(t);
+    osc1.stop(t + 0.35);
+
+    // 2. High fifth harmonic accent
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(520, t);
+    osc2.frequency.exponentialRampToValueAtTime(2400, t + 0.4);
+    gain2.gain.setValueAtTime(0.14, t);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc2.connect(gain2);
+    gain2.connect(this.ctx.destination);
+    osc2.start(t);
+    osc2.stop(t + 0.4);
+
+    // 3. Celebratory sparkling arpeggio triplet
+    [784, 1046.5, 1568].forEach((f, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, t + 0.06 * idx);
+      gain.gain.setValueAtTime(0.12, t + 0.06 * idx);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06 * idx + 0.15);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(t + 0.06 * idx);
+      osc.stop(t + 0.06 * idx + 0.15);
+    });
   },
 
   playSpin() {
@@ -1164,6 +1219,27 @@ function makePerson() {
 
 function makeJump() {
   const g = new THREE.Group();
+
+  // Boost approach pad (light green runway right in front of ramp)
+  // Ramp approaches from -Z towards +Z. The player reaches the approach zone first,
+  // which is in front (downhill/facing camera = local +Z relative to the ramp).
+  // Length 4.5, width 3.2, centered at z = +3.2 in local ramp space.
+  const boostGeo = new THREE.PlaneGeometry(3.2, 4.5);
+  const boostMat = new THREE.MeshLambertMaterial({
+    color: C.boostGreen,
+    flatShading: true,
+  });
+  const boostPad = new THREE.Mesh(boostGeo, boostMat);
+  boostPad.rotation.x = -Math.PI / 2;
+  boostPad.position.set(0, 0.02, 3.2);
+  g.add(boostPad);
+
+  // Chevron directional arrows on the boost zone pointing forward into the ramp (-Z)
+  for (let c = -1; c <= 1; c++) {
+    const chev = box(1.8, 0.03, 0.35, 0xffffff, 0, 0.03, 3.2 + c * 1.2);
+    g.add(chev);
+  }
+
   // ramp wedge approximated with boxes
   const ramp = box(3.2, 0.15, 2.8, 0xa8c8e0, 0, 0.2, 0);
   ramp.rotation.x = -0.35;
@@ -1344,6 +1420,8 @@ function startGame() {
   state.keys.space = false;
   state.isCrouching = false;
   state.crouchAmount = 0;
+  state.crouchChargeTime = 0;
+  state.pendingSuperJump = false;
   state.isManualJump = false;
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
@@ -1410,6 +1488,8 @@ function crash() {
   state.onGround = true;
   state.isCrouching = false;
   state.crouchAmount = 0;
+  state.crouchChargeTime = 0;
+  state.pendingSuperJump = false;
   state.isManualJump = false;
   player.scale.set(1, 1, 1);
   state.playerYaw = 0;
@@ -1435,11 +1515,32 @@ function updateHUD() {
   levelLabel.textContent = String(state.level);
 }
 
+function isPlayerInBoostZone() {
+  const px = state.playerX;
+  const pz = 0;
+  for (const o of state.objects) {
+    if (o.type === 'jump' && !o.used) {
+      // The boost pad is centered at o.x, and o.z + 3.2
+      // X range: o.x ± 1.7
+      // Z range on track: (o.z + 3.2 - 2.25) to (o.z + 3.2 + 2.25) = [o.z + 0.95, o.z + 5.45]
+      // Pad passes player (pz = 0) when 0 is in [o.z + 0.95, o.z + 5.45], meaning o.z in [-5.45, -0.95]
+      const padCenterZ = o.z + 3.2;
+      const inZ = Math.abs(pz - padCenterZ) <= 2.3;
+      const inX = Math.abs(px - o.x) <= 1.7;
+      if (inZ && inX) {
+        return o;
+      }
+    }
+  }
+  return null;
+}
+
 function startCrouch() {
   if (state.mode !== 'play') return;
   state.keys.space = true;
   if (state.onGround) {
     state.isCrouching = true;
+    state.crouchChargeTime = 0;
   }
 }
 
@@ -1449,14 +1550,37 @@ function releaseJump() {
 
   if (state.onGround && state.isCrouching) {
     state.isCrouching = false;
-    const now = state.clock.getElapsedTime();
-    state.lastManualJumpTime = now;
-    state.onGround = false;
-    state.isManualJump = true;
-    state.velY = 6.8; // High enough to clear kids (~1.05m apex > 0.95m), but too short for tricks/spins or clearing trees
-    state.airTime = 0;
-    state.cumulativeAirRotation = 0;
-    sfx.playJump(false);
+    const isCharged = state.crouchChargeTime >= 0.15; // Fully charged after ~0.15s
+    const boostRamp = isPlayerInBoostZone();
+
+    if (isCharged && boostRamp) {
+      // Super Jump triggered on the green approach pad!
+      boostRamp.used = true;
+      boostRamp.mesh.userData.used = true;
+      state.pendingSuperJump = false;
+
+      state.onGround = false;
+      state.isManualJump = false;
+      state.velY = (8 + state.speed * 0.12) * 1.732; // 3x higher jump
+      state.airTime = 0;
+      state.cumulativeAirRotation = 0;
+      sfx.playJump(true);
+
+      const superPts = Math.floor(state.speed * 4.0);
+      state.score += superPts;
+      comboEl.textContent = `SUPER JUMP! +${superPts}`;
+      setTimeout(() => { if (comboEl.textContent.startsWith('SUPER')) comboEl.textContent = ''; }, 1000);
+    } else {
+      // Regular manual jump
+      const now = state.clock.getElapsedTime();
+      state.lastManualJumpTime = now;
+      state.onGround = false;
+      state.isManualJump = true;
+      state.velY = 6.8; // Clears other skiers (~1.05m apex > 0.95m), fails trees
+      state.airTime = 0;
+      state.cumulativeAirRotation = 0;
+      sfx.playJump(false);
+    }
   } else {
     state.isCrouching = false;
   }
@@ -1708,6 +1832,11 @@ function tickPlay(dt) {
   // Update player mesh rotation Y
   playerMesh.rotation.y = Math.PI + state.playerYaw;
 
+  // Track charge time while crouching on the ground
+  if (state.onGround && state.isCrouching) {
+    state.crouchChargeTime += dt;
+  }
+
   // Visual crouch squash & stretch
   const targetCrouch = (state.onGround && state.isCrouching) ? 1 : 0;
   state.crouchAmount += (targetCrouch - state.crouchAmount) * 14 * dt;
@@ -1850,22 +1979,17 @@ function tickPlay(dt) {
           o.used = true;
           o.mesh.userData.used = true;
 
-          // Check if player jumped within 1/3 of a second (~0.33s) before hitting ramp
-          const now = state.clock.getElapsedTime();
-          const timedJump = (now - state.lastManualJumpTime) <= 0.35;
-          const boostMult = timedJump ? 1.732 : 1.0; // 1.732x velocity = 3x jump height
-
           state.onGround = false;
           state.isManualJump = false;
-          state.velY = (8 + state.speed * 0.12) * boostMult;
+          state.velY = 8 + state.speed * 0.12;
           state.airTime = 0;
           state.cumulativeAirRotation = 0;
-          sfx.playJump(timedJump);
+          sfx.playJump(false);
 
-          const jumpPts = Math.floor(state.speed * 1.2 * (timedJump ? 3 : 1));
+          const jumpPts = Math.floor(state.speed * 1.2);
           state.score += jumpPts;
-          comboEl.textContent = timedJump ? `SUPER JUMP! +${jumpPts}` : `JUMP +${jumpPts}`;
-          setTimeout(() => { if (comboEl.textContent.startsWith('JUMP') || comboEl.textContent.startsWith('SUPER')) comboEl.textContent = ''; }, 700);
+          comboEl.textContent = `JUMP +${jumpPts}`;
+          setTimeout(() => { if (comboEl.textContent.startsWith('JUMP')) comboEl.textContent = ''; }, 700);
         } else if (o.type === 'tree') {
           // Trees are tall and cannot be cleared by manual jump (need playerY >= 2.0 to clear)
           if (state.playerY < 2.0) {

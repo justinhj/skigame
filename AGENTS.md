@@ -20,7 +20,7 @@ Three.js is loaded from unpkg via an import map:
 |--------|--------|
 | **←** / **A** | Steer left (on ground) / Spin counter-clockwise (in ramp air) |
 | **→** / **D** | Steer right (on ground) / Spin clockwise (in ramp air) |
-| **Space (Hold & Release)** | Hold to crouch, release to jump. Releasing within 1/3s of hitting a ramp triggers Super Jump |
+| **Space (Hold & Release)** | Hold to crouch & charge jump; release on the light green zone before a ramp for Super Jump |
 | **Pointer Drag / Touch** | Drag horizontally to steer on ground or rotate/spin in ramp air |
 | **Enter** / **Space** / Any non-modifier key | Start game (from menu) or retry (game over) |
 | **Escape** | End run early → game over screen |
@@ -39,7 +39,12 @@ There is **no manual speed control**. Speed is fixed per level and increases aut
   - Manual jumps do not allow spinning or tricks (player remains facing forward; tricks and spins are reserved for ramp jumps).
 - **Jump ramps & Super Jump**:
   - Ramps launch skier into the air.
-  - If you release `Space` within 1/3 second (~0.35s) before hitting a ramp, you trigger a **SUPER JUMP** (height is 3x higher via `velY * 1.732`, 3x launch score, and higher-pitched SFX).
+  - Each ramp has a visible **light green approach zone** with chevron markings directly in front of it.
+  - If you are fully charged (hold `Space` for $\ge 0.15$s) and release `Space` while over this green zone, you trigger a **SUPER JUMP**:
+    - Launches 3x higher into the air (`velY * 1.732`).
+    - Awards high points (`speed * 4.0`).
+    - Plays a distinct futuristic retro power-chord arpeggio SFX (`sfx.playSuperJump()`).
+    - Displays `SUPER JUMP! +[points]` banner.
 - **Dodge trees** and **other skiers** (people). Hitting one costs a life. Other skiers drift left/right and carve downhill at 1/3 player speed.
 - **Air tricks & landing alignment**:
   - While airborne, steering controls rotate player yaw instead of horizontal position.
@@ -184,7 +189,7 @@ Objects are stored as:
 
 When an object’s Z is near the player (`≈ -3 … 2.5`):
 
-- **Jump Ramp**: Launches player (`velY = (8 + speed * 0.12) * boostMult`). If the player manually jumped within 0.35s before hitting the ramp, `boostMult = 1.732` (achieving 3x jump height) for a **SUPER JUMP**, with 3x launch points and a higher pitched chime.
+- **Jump Ramp**: Launches player (`velY = 8 + speed * 0.12`). If the player releases a fully-charged jump while in the light green approach zone in front of the ramp, a **SUPER JUMP** is triggered with 3x height (`velY * 1.732`), high bonus score (`speed * 4.0`), and distinct power-chord arpeggio SFX.
 - **Tree**: Crashes if `playerY < 2.0` (cannot be cleared with manual jump).
 - **Person / Other Skier**:
   - If airborne at `playerY >= 0.95`, safely clears the skier and awards a +75 "CLEARED SKIER!" bonus (once per skier).
