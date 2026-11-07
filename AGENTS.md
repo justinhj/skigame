@@ -100,9 +100,9 @@ Important code regions (search for the section comments):
 | Game state | `state` object + level constants |
 | Audio engine `sfx` | Web Audio API chiptune music (bass + melody scheduler) and procedural SFX (jump, spin, land, crash, level-up) |
 | Three.js setup | Scene, camera, renderer, lights |
-| Track group | Pitched slope + side banks + dashed and edge perspective stripes |
+| Track group | Pitched slope + side banks + subtle OutRun road bands |
 | Parallax layers | Side evergreen tree silhouettes + distant purple mountain backdrop (`bgMountainGroup`) |
-| Player skier | Root `player` group + child `playerMesh` (skis, boots, body, arms, poles, head, hat, pom-pom, face, shadow) |
+| Player skier | Root `player` group + child `playerMesh` (skis with outline base, boots, body, arms, poles, head, hat, pom-pom, face, oval shadow, snow spray particles) |
 | Object factories | `makeTree`, `makePerson`, `makeJump`, snow particles |
 | Spawning | `spawnAhead`, `clearObjects`, spacing validation (`isNearJump`, `isJumpNearTree`) |
 | Game flow | `startGame`, `endGame`, `showMenu`, `crash`, `levelUp`, `updateHUD`, `updateHigh` |
