@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SLOPE RACER '84</title>
+  <title>SKI GAME</title>
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
@@ -398,8 +398,9 @@ const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
 const instructions = [
   "WELCOME TO SKI GAME",
   isMobile ? "DRAG LEFT/RIGHT TO CARVE" : "USE ARROWS OR A/D TO STEER",
+  "HOLD & RELEASE SPACE TO JUMP",
+  "RELEASE BEFORE RAMPS = MEGA AIR!",
   "DODGE TREES & OTHER SKIERS",
-  "JUMP RAMPS FOR MASSIVE AIR",
   "AIR TIME & LANDINGS GIVE BONUSES",
   "LEVEL UP EVERY 30S FOR MORE SPEED",
   "3 LIVES - GET THE HI-SCORE!"
@@ -536,14 +537,18 @@ const state = {
   invincible: 0,
   distance: 0,
   difficulty: 1,
-  keys: { left: false, right: false },
+  keys: { left: false, right: false, space: false },
   lastPointerX: 0,
   touchDeltaX: 0,
   touchActive: false,
+  isCrouching: false,
+  crouchAmount: 0,
+  isManualJump: false,
   objects: [],
   nextSpawnZ: -40,
   crashCooldown: 0,
   levelBannerTimer: 0,
+  lastManualJumpTime: -999,
   clock: new THREE.Clock(),
   anim: 0,
 };
@@ -659,7 +664,7 @@ const sfx = {
     }
   },
 
-  playJump() {
+  playJump(superJump = false) {
     this.init();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -667,17 +672,17 @@ const sfx = {
     const gain = this.ctx.createGain();
     
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(800, t + 0.25);
+    osc.frequency.setValueAtTime(superJump ? 220 : 150, t);
+    osc.frequency.exponentialRampToValueAtTime(superJump ? 1400 : 800, t + (superJump ? 0.35 : 0.25));
     
-    gain.gain.setValueAtTime(0.12, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    gain.gain.setValueAtTime(superJump ? 0.16 : 0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + (superJump ? 0.35 : 0.25));
     
     osc.connect(gain);
     gain.connect(this.ctx.destination);
     
     osc.start(t);
-    osc.stop(t + 0.25);
+    osc.stop(t + (superJump ? 0.35 : 0.25));
   },
 
   playSpin() {
@@ -1283,7 +1288,7 @@ function spawnAhead() {
     mesh.position.set(x, 0, z - Math.random() * 6);
     track.add(mesh);
     state.objects.push({
-      mesh, type: 'person', x, z: mesh.position.z, radius: 0.72, drift: mesh.userData.drift,
+      mesh, type: 'person', x, z: mesh.position.z, radius: 0.72, drift: mesh.userData.drift, cleared: false,
     });
   }
 
@@ -1332,11 +1337,17 @@ function startGame() {
   state.difficulty = 1;
   state.crashCooldown = 0;
   state.levelBannerTimer = 0;
+  state.lastManualJumpTime = -999;
   state.nextSpawnZ = -25;
   state.touchActive = false;
   state.touchDeltaX = 0;
+  state.keys.space = false;
+  state.isCrouching = false;
+  state.crouchAmount = 0;
+  state.isManualJump = false;
   player.position.set(0, 0, 0);
   player.rotation.set(0, 0, 0);
+  player.scale.set(1, 1, 1);
   playerMesh.rotation.y = Math.PI;
   levelUpBanner.style.display = 'none';
   clearObjects();
@@ -1397,6 +1408,10 @@ function crash() {
   state.playerY = 0;
   state.velY = 0;
   state.onGround = true;
+  state.isCrouching = false;
+  state.crouchAmount = 0;
+  state.isManualJump = false;
+  player.scale.set(1, 1, 1);
   state.playerYaw = 0;
   playerMesh.rotation.y = Math.PI;
   airBanner.style.display = 'none';
@@ -1420,6 +1435,33 @@ function updateHUD() {
   levelLabel.textContent = String(state.level);
 }
 
+function startCrouch() {
+  if (state.mode !== 'play') return;
+  state.keys.space = true;
+  if (state.onGround) {
+    state.isCrouching = true;
+  }
+}
+
+function releaseJump() {
+  if (state.mode !== 'play') return;
+  state.keys.space = false;
+
+  if (state.onGround && state.isCrouching) {
+    state.isCrouching = false;
+    const now = state.clock.getElapsedTime();
+    state.lastManualJumpTime = now;
+    state.onGround = false;
+    state.isManualJump = true;
+    state.velY = 6.8; // High enough to clear kids (~1.05m apex > 0.95m), but too short for tricks/spins or clearing trees
+    state.airTime = 0;
+    state.cumulativeAirRotation = 0;
+    sfx.playJump(false);
+  } else {
+    state.isCrouching = false;
+  }
+}
+
 // ─── Input ──────────────────────────────────────────────────
 window.addEventListener('keydown', (e) => {
   sfx.init();
@@ -1435,6 +1477,15 @@ window.addEventListener('keydown', (e) => {
 
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') { state.keys.left = true; e.preventDefault(); }
   if (e.code === 'ArrowRight' || e.code === 'KeyD') { state.keys.right = true; e.preventDefault(); }
+  if (e.code === 'Space') {
+    if (state.mode === 'play') {
+      if (!e.repeat && !state.keys.space) {
+        startCrouch();
+      }
+      e.preventDefault();
+      return;
+    }
+  }
   if (e.code === 'Enter' || e.code === 'Space') {
     if (state.mode === 'gameover') {
       startGame();
@@ -1448,6 +1499,12 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.left = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.right = false;
+  if (e.code === 'Space') {
+    if (state.mode === 'play') {
+      releaseJump();
+      e.preventDefault();
+    }
+  }
 });
 
 // Mobile Pointer/Touch Steering & Start handlers
@@ -1599,7 +1656,7 @@ function tickPlay(dt) {
     }
     const half = SLOPE_W / 2 - 1.2;
     state.playerX = Math.max(-half, Math.min(half, state.playerX));
-  } else {
+  } else if (!state.isManualJump) {
     const rotSpeed = 7.5; // radians per second
     if (state.touchActive) {
       const airSensitivity = 0.015; // radians per pixel
@@ -1630,6 +1687,9 @@ function tickPlay(dt) {
         }
       }
     }
+  } else {
+    // During manual jump, keep skier facing forward (no tricks/spins permitted)
+    state.playerYaw = 0;
   }
 
   if (state.touchActive) {
@@ -1648,10 +1708,17 @@ function tickPlay(dt) {
   // Update player mesh rotation Y
   playerMesh.rotation.y = Math.PI + state.playerYaw;
 
+  // Visual crouch squash & stretch
+  const targetCrouch = (state.onGround && state.isCrouching) ? 1 : 0;
+  state.crouchAmount += (targetCrouch - state.crouchAmount) * 14 * dt;
+  const scaleY = 1.0 - state.crouchAmount * 0.35; // squash down to 65% height
+  const scaleXZ = 1.0 + state.crouchAmount * 0.18; // widen slightly when crouching
+  player.scale.set(scaleXZ, scaleY, scaleXZ);
+
   // Lean
   const targetLean = -steerInput * 0.35;
   player.rotation.z += (targetLean - player.rotation.z) * 8 * dt;
-  player.rotation.x = state.onGround ? 0 : -0.25;
+  player.rotation.x = state.onGround ? (state.isCrouching ? -0.15 : 0) : -0.25;
 
   // Vertical / jump physics
   if (!state.onGround) {
@@ -1661,14 +1728,18 @@ function tickPlay(dt) {
     const airPts = state.airTime * state.speed * 0.8 * dt * 10;
     state.score += airPts;
     
-    airBanner.style.display = 'block';
-    const deg = Math.round(state.cumulativeAirRotation * (180 / Math.PI));
-    airBanner.textContent = `SPIN: ${deg}° | AIR +${Math.floor(state.airTime * state.speed * 0.5)}`;
+    if (!state.isManualJump) {
+      airBanner.style.display = 'block';
+      const deg = Math.round(state.cumulativeAirRotation * (180 / Math.PI));
+      airBanner.textContent = `SPIN: ${deg}° | AIR +${Math.floor(state.airTime * state.speed * 0.5)}`;
+    }
 
     if (state.playerY <= 0) {
       state.playerY = 0;
       state.velY = 0;
       state.onGround = true;
+      const wasManual = state.isManualJump;
+      state.isManualJump = false;
       airBanner.style.display = 'none';
 
       // Landing check: facing backwards or forwards within 5 degrees
@@ -1683,8 +1754,8 @@ function tickPlay(dt) {
         playerMesh.rotation.y = Math.PI;
         sfx.playLanding();
         
-        const airBonus = state.airTime > 0.35 ? Math.floor(state.airTime * state.speed * 2.5) : 0;
-        const spinBonus = Math.floor(state.cumulativeAirRotation * 50);
+        const airBonus = (!wasManual && state.airTime > 0.35) ? Math.floor(state.airTime * state.speed * 2.5) : 0;
+        const spinBonus = !wasManual ? Math.floor(state.cumulativeAirRotation * 50) : 0;
         const totalBonus = airBonus + spinBonus;
         
         if (totalBonus > 0) {
@@ -1702,13 +1773,15 @@ function tickPlay(dt) {
         playerMesh.rotation.y = 2 * Math.PI;
         sfx.playLanding();
         
-        const airBonus = state.airTime > 0.35 ? Math.floor(state.airTime * state.speed * 2.5) : 0;
-        const spinBonus = Math.floor(state.cumulativeAirRotation * 50) + 150; // extra bonus for landing backward
+        const airBonus = (!wasManual && state.airTime > 0.35) ? Math.floor(state.airTime * state.speed * 2.5) : 0;
+        const spinBonus = !wasManual ? Math.floor(state.cumulativeAirRotation * 50) + 150 : 0;
         const totalBonus = airBonus + spinBonus;
         
-        state.score += totalBonus;
-        comboEl.textContent = `BACKWARD LANDING +${totalBonus}`;
-        setTimeout(() => { if (comboEl.textContent.startsWith('BACKWARD')) comboEl.textContent = ''; }, 1200);
+        if (totalBonus > 0) {
+          state.score += totalBonus;
+          comboEl.textContent = `BACKWARD LANDING +${totalBonus}`;
+          setTimeout(() => { if (comboEl.textContent.startsWith('BACKWARD')) comboEl.textContent = ''; }, 1200);
+        }
       } else {
         // Crash / bad landing: lose 1 life
         crash();
@@ -1773,20 +1846,41 @@ function tickPlay(dt) {
       const dz = o.z - pz;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist < o.radius + pr) {
-        if (o.type === 'jump' && state.onGround && !o.used) {
+        if (o.type === 'jump' && !o.used) {
           o.used = true;
           o.mesh.userData.used = true;
+
+          // Check if player jumped within 1/3 of a second (~0.33s) before hitting ramp
+          const now = state.clock.getElapsedTime();
+          const timedJump = (now - state.lastManualJumpTime) <= 0.35;
+          const boostMult = timedJump ? 1.732 : 1.0; // 1.732x velocity = 3x jump height
+
           state.onGround = false;
-          state.velY = 8 + state.speed * 0.12;
+          state.isManualJump = false;
+          state.velY = (8 + state.speed * 0.12) * boostMult;
           state.airTime = 0;
           state.cumulativeAirRotation = 0;
-          sfx.playJump();
-          const jumpPts = Math.floor(state.speed * 1.2);
+          sfx.playJump(timedJump);
+
+          const jumpPts = Math.floor(state.speed * 1.2 * (timedJump ? 3 : 1));
           state.score += jumpPts;
-          comboEl.textContent = `JUMP +${jumpPts}`;
-          setTimeout(() => { if (comboEl.textContent.startsWith('JUMP')) comboEl.textContent = ''; }, 700);
-        } else if ((o.type === 'tree' || o.type === 'person') && state.playerY < 1.1) {
-          crash();
+          comboEl.textContent = timedJump ? `SUPER JUMP! +${jumpPts}` : `JUMP +${jumpPts}`;
+          setTimeout(() => { if (comboEl.textContent.startsWith('JUMP') || comboEl.textContent.startsWith('SUPER')) comboEl.textContent = ''; }, 700);
+        } else if (o.type === 'tree') {
+          // Trees are tall and cannot be cleared by manual jump (need playerY >= 2.0 to clear)
+          if (state.playerY < 2.0) {
+            crash();
+          }
+        } else if (o.type === 'person') {
+          // Other skiers are ~0.95m tall. If player is above 0.95m, they clear them!
+          if (state.playerY < 0.95) {
+            crash();
+          } else if (!o.cleared) {
+            o.cleared = true;
+            state.score += 75;
+            comboEl.textContent = `CLEARED SKIER! +75`;
+            setTimeout(() => { if (comboEl.textContent.startsWith('CLEARED')) comboEl.textContent = ''; }, 800);
+          }
         }
       }
     }

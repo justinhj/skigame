@@ -18,9 +18,10 @@ Three.js is loaded from unpkg via an import map:
 
 | Input | Action |
 |--------|--------|
-| **←** / **A** | Steer left (on ground) / Spin counter-clockwise (in air) |
-| **→** / **D** | Steer right (on ground) / Spin clockwise (in air) |
-| **Pointer Drag / Touch** | Drag horizontally to steer on ground or rotate/spin in air |
+| **←** / **A** | Steer left (on ground) / Spin counter-clockwise (in ramp air) |
+| **→** / **D** | Steer right (on ground) / Spin clockwise (in ramp air) |
+| **Space (Hold & Release)** | Hold to crouch, release to jump. Releasing within 1/3s of hitting a ramp triggers Super Jump |
+| **Pointer Drag / Touch** | Drag horizontally to steer on ground or rotate/spin in ramp air |
 | **Enter** / **Space** / Any non-modifier key | Start game (from menu) or retry (game over) |
 | **Escape** | End run early → game over screen |
 | Click / Tap screen | Start game from menu; buttons for **TRY AGAIN**, **MENU**, and **MUSIC: ON/OFF** |
@@ -30,8 +31,16 @@ There is **no manual speed control**. Speed is fixed per level and increases aut
 ## Gameplay rules & mechanics
 
 - Chase-camera skier going **downhill** (world scrolls toward the camera).
+- **Manual Jump (`Space` Hold & Release)**:
+  - Holding `Space` causes the skier to crouch ready for the jump (visual squash and forward lean).
+  - Releasing `Space` executes the jump (`velY = 6.8`, apex height ~1.05m).
+  - Can clear other skiers (requires `playerY >= 0.95`), rewarding +75 points (`comboEl: CLEARED SKIER! +75`).
+  - Cannot clear trees (trees require height >= 2.0 to clear, so manual jumps will crash into trees).
+  - Manual jumps do not allow spinning or tricks (player remains facing forward; tricks and spins are reserved for ramp jumps).
+- **Jump ramps & Super Jump**:
+  - Ramps launch skier into the air.
+  - If you release `Space` within 1/3 second (~0.35s) before hitting a ramp, you trigger a **SUPER JUMP** (height is 3x higher via `velY * 1.732`, 3x launch score, and higher-pitched SFX).
 - **Dodge trees** and **other skiers** (people). Hitting one costs a life. Other skiers drift left/right and carve downhill at 1/3 player speed.
-- **Jump ramps** launch you into the air.
 - **Air tricks & landing alignment**:
   - While airborne, steering controls rotate player yaw instead of horizontal position.
   - Spinning grants continuous points (`yawChange * 20`) and spin SFX (`sfx.playSpin()`).
@@ -175,8 +184,11 @@ Objects are stored as:
 
 When an object’s Z is near the player (`≈ -3 … 2.5`):
 
-- **Jump**: If `state.onGround && !o.used`, launches player (`velY = 8 + speed * 0.12`), awards jump points, plays SFX.
-- **Tree / Person**: If airborne height `playerY < 1.1`, triggers `crash()`.
+- **Jump Ramp**: Launches player (`velY = (8 + speed * 0.12) * boostMult`). If the player manually jumped within 0.35s before hitting the ramp, `boostMult = 1.732` (achieving 3x jump height) for a **SUPER JUMP**, with 3x launch points and a higher pitched chime.
+- **Tree**: Crashes if `playerY < 2.0` (cannot be cleared with manual jump).
+- **Person / Other Skier**:
+  - If airborne at `playerY >= 0.95`, safely clears the skier and awards a +75 "CLEARED SKIER!" bonus (once per skier).
+  - If `playerY < 0.95`, triggers `crash()`.
 - **Landing Evaluation**:
   - When airborne player returns to `playerY <= 0`:
     - Check `playerYaw` angle deviation from 0° (forward) or 180° (backward).
@@ -188,7 +200,8 @@ When an object’s Z is near the player (`≈ -3 … 2.5`):
 - Continuous: `score += speed * 0.4 * dt`
 - In-air rotation: `score += abs(yawChange) * 20`
 - Continuous air time: `airTime * speed * 0.8 * dt * 10`
-- Jump launch: `Math.floor(speed * 1.2)`
+- Jump launch: `Math.floor(speed * 1.2)` (or 3x for timed Super Jump)
+- Cleared skier bonus: +75 points
 - Safe forward landing: air bonus (`airTime * speed * 2.5`) + spin bonus (`cumulativeAirRotation * 50`)
 - Safe backward landing: above + 150 extra backward points
 
