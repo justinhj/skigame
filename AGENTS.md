@@ -18,22 +18,29 @@ Three.js is loaded from unpkg via an import map:
 
 | Input | Action |
 |--------|--------|
-| **←** / **A** | Steer left |
-| **→** / **D** | Steer right |
-| **Enter** / **Space** | Start game (menu) or retry (game over) |
+| **←** / **A** | Steer left (on ground) / Spin counter-clockwise (in air) |
+| **→** / **D** | Steer right (on ground) / Spin clockwise (in air) |
+| **Pointer Drag / Touch** | Drag horizontally to steer on ground or rotate/spin in air |
+| **Enter** / **Space** / Any non-modifier key | Start game (from menu) or retry (game over) |
 | **Escape** | End run early → game over screen |
-| Click **PRESS START** / **TRY AGAIN** / **MENU** | Same as above via UI |
+| Click / Tap screen | Start game from menu; buttons for **TRY AGAIN**, **MENU**, and **MUSIC: ON/OFF** |
 
 There is **no manual speed control**. Speed is fixed per level and increases automatically.
 
-## Gameplay rules
+## Gameplay rules & mechanics
 
 - Chase-camera skier going **downhill** (world scrolls toward the camera).
-- **Dodge trees** and **other skiers** (people). Hitting one costs a life.
-- **Jump ramps** (pink-sided) launch you into the air.
-- **Score** ticks while skiing; higher speed (later levels) = more points. Air time and landings add bonuses.
+- **Dodge trees** and **other skiers** (people). Hitting one costs a life. Other skiers drift left/right and carve downhill at 1/3 player speed.
+- **Jump ramps** launch you into the air.
+- **Air tricks & landing alignment**:
+  - While airborne, steering controls rotate player yaw instead of horizontal position.
+  - Spinning grants continuous points (`yawChange * 20`) and spin SFX (`sfx.playSpin()`).
+  - Safe landings require landing facing forward (within ±25° of 0°) or backward (within ±25° of 180°).
+  - Landing forward yields air time bonus + spin bonus (`comboEl: LANDING / SPIN LANDING`).
+  - Landing backward yields air time bonus + spin bonus + 150 extra backward bonus (`comboEl: BACKWARD LANDING`).
+  - Landing sideways (> 25° deviation from forward or backward) results in a **WIPEOUT** (costs 1 life via `crash()`).
 - **3 lives**. After the 3rd crash → game over menu.
-- **Level up every 30 seconds** (`LEVEL_INTERVAL`). Speed increases; density of hazards also scales with level.
+- **Level up every 30 seconds** (`LEVEL_INTERVAL`). Speed increases; hazard density and fog density scale with level.
 - Hi-score is stored in `localStorage` under key `slopeRacerHi`.
 
 ### Level / speed formula
@@ -58,28 +65,35 @@ speed = BASE_SPEED + (level - 1) * SPEED_PER_LEVEL
 skigame/
   index.html   # entire game
   AGENTS.md    # this file
+  favicon.ico  # icon
 ```
 
 ### Structure inside `index.html`
 
-1. **CSS** — retro UI (Press Start 2P), CRT scanlines, menus, HUD.
-2. **DOM** — menus, HUD, banners (`#air-banner`, `#level-up-banner`), crash flash.
-3. **JS module** — Three.js scene, game state, loop.
+1. **CSS** — retro typography (Google Font 'Press Start 2P'), CRT scanlines, vignette, HUD, animated banners, menu styling with responsive text and retro buttons.
+2. **DOM** — menus, canvas `#menu-skier`, twinkling `#stars`, cycle-animated instructions `#menu-instructions`, HUD, banners (`#air-banner`, `#level-up-banner`), crash flash, `#mute-btn`.
+3. **JS module** — Three.js scene, Web Audio sound system, game state, animation loop.
 
 Important code regions (search for the section comments):
 
 | Section | Role |
 |---------|------|
-| Palette `C` | Shared hex colors |
+| Palette `C` | Shared hex colors for 80s neon palette |
+| DOM lookups | Elements and mobile detection flags |
+| Menu Instructions | Cycling help text banner system (`startInstructions`, `stopInstructions`) |
+| 2D Menu Skier | Canvas pixel-art doodle on the title screen |
+| Twinkling Stars | CSS-animated star elements on title screen |
 | Game state | `state` object + level constants |
+| Audio engine `sfx` | Web Audio API chiptune music (bass + melody scheduler) and procedural SFX (jump, spin, land, crash, level-up) |
 | Three.js setup | Scene, camera, renderer, lights |
-| Track group | Pitched slope + banks + stripes |
-| Parallax mountains | Side peaks that scroll slower than the run |
-| Player skier | Cute box-mesh character |
-| Object factories | `makeTree`, `makePerson`, `makeJump` |
-| Spawning | `spawnAhead`, `clearObjects` |
-| Game flow | `startGame`, `endGame`, `crash`, `levelUp` |
-| Main loop | `animate` → `tickPlay` |
+| Track group | Pitched slope + side banks + dashed and edge perspective stripes |
+| Parallax layers | Side evergreen tree silhouettes + distant purple mountain backdrop (`bgMountainGroup`) |
+| Player skier | Root `player` group + child `playerMesh` (skis, boots, body, arms, poles, head, hat, pom-pom, face, shadow) |
+| Object factories | `makeTree`, `makePerson`, `makeJump`, snow particles |
+| Spawning | `spawnAhead`, `clearObjects`, spacing validation (`isNearJump`, `isJumpNearTree`) |
+| Game flow | `startGame`, `endGame`, `showMenu`, `crash`, `levelUp`, `updateHUD`, `updateHigh` |
+| Input handlers | Keyboard (`keydown`, `keyup`), Pointer/Touch (`pointerdown`, `pointermove`, `pointerup`), UI clicks |
+| Main loop | `animate` → `tickPlay` / menu idle bob and drift |
 
 ## Coordinate system & “illusion of motion”
 
@@ -105,27 +119,51 @@ Negative X rotation lowers far (−Z) points in world space so the road appears 
 
 ### Pixel look
 
-- Renderer internal resolution is `window / PIXEL_SCALE` (`PIXEL_SCALE = 3`), then CSS-scaled full screen.
+- Renderer internal resolution is `window / PIXEL_SCALE` (`PIXEL_SCALE = 3`), then CSS-scaled full screen with `image-rendering: pixelated`.
 - Flat-shaded `MeshLambertMaterial` boxes for characters/props.
-- CSS scanlines + vignette overlays.
+- CSS scanlines + radial vignette overlays.
 
 ## Core systems
+
+### Audio system (`sfx`)
+
+Self-contained procedural Web Audio API synthesizer:
+- **`startMusic()` / `stopMusic()` / `toggleMute()`**: 8-step bassline sequencer (triangle wave) + melody (square wave) at 130 BPM with lookahead scheduling.
+- **Procedural sound effects**:
+  - `playJump()`: upward frequency sweep (triangle wave).
+  - `playSpin()`: quick blip on rotation steps in air (square wave).
+  - `playLanding()`: two-tone chime (C5 + E5 square waves).
+  - `playCrash()`: filtered white noise buffer with lowpass sweep.
+  - `playLevelUp()`: ascending C-major arpeggio.
+- Must resume `AudioContext` on user interaction (`sfx.init()`).
 
 ### Modes (`state.mode`)
 
 | Mode | Behavior |
 |------|----------|
-| `menu` | Title screen; idle skier bob; mountains drift slowly |
-| `play` | Full `tickPlay` simulation |
-| `gameover` | Final score + retry / menu |
+| `menu` | Title screen; idle skier bob; mountains drift slowly; instructions cycling |
+| `play` | Full `tickPlay` simulation; music active |
+| `gameover` | Final score + retry / menu buttons |
 
-### Input
+### Input handling
 
-Keydown/keyup set `state.keys.left` / `state.keys.right`. Steering is applied each frame in `tickPlay` from those flags (not from discrete key repeats).
+- **Keyboard**:
+  - `state.keys.left` / `state.keys.right` updated by keydown/keyup.
+  - Enter / Space restarts game from gameover or menu.
+  - Escape ends run immediately into gameover.
+- **Touch / Pointer**:
+  - `pointerdown`, `pointermove`, `pointerup`, `pointercancel` track drag deltas (`state.touchDeltaX`).
+  - Converted to horizontal position delta on the ground, or yaw rotation delta in the air.
+  - Consumed and reset each frame in `tickPlay`.
 
-### Spawning
+### Spawning & clearance validation
 
-`spawnAhead()` places trees, people, and occasional jumps at `state.nextSpawnZ` (and slightly behind it). Gaps shrink as `state.difficulty` (level) rises. The loop keeps enough objects ahead (min Z roughly &lt; −95).
+`spawnAhead()` places trees, other skiers, and jump ramps at `state.nextSpawnZ`:
+- Trees and jumps use `isNearJump` and `isJumpNearTree` to avoid impossible obstacle placements right next to or in front of ramps (min 14 units in Z, 5 units in X).
+- Trees scale in density with `difficulty` (`1 + Math.floor(Math.random() * (2.4 + Math.min(4.4, diff * 0.65)))`).
+- Skiers (`makePerson`) have random color suits and random lateral drift (`o.drift`), changing carving direction periodically.
+- Gaps between waves shrink as difficulty rises: `Math.max(7, 17 - diff * 0.9) + Math.random() * 6`.
+- The loop keeps enough objects ahead (min Z &lt; −95 or count &lt; 8).
 
 Objects are stored as:
 
@@ -133,92 +171,93 @@ Objects are stored as:
 { mesh, type: 'tree'|'person'|'jump', x, z, radius, drift?, used? }
 ```
 
-### Collision
+### Collision & jump mechanics
 
 When an object’s Z is near the player (`≈ -3 … 2.5`):
 
-- **Jump** + on ground + not used → launch (`velY`), air scoring.
-- **Tree / person** + low air height (`playerY < 1.1`) → `crash()`.
-
-Invincibility frames (`state.invincible`) and `crashCooldown` prevent multi-hit spam. Crashes do **not** change speed (speed is level-locked).
-
-### Jump / air scoring
-
-- Hitting a ramp sets `onGround = false` and upward `velY` (scales with speed).
-- While airborne: continuous air points ∝ air time × speed; UI shows `AIR +…`.
-- On landing after meaningful air time: landing bonus.
-
-### Parallax mountains
-
-`mountainLayers` — arrays of peak meshes on both sides of the run:
-
-- **Far layer** scrolls at ~22% of run speed.
-- **Mid layer** scrolls at ~45%.
-
-`scrollMountains(baseMove)` advances and wraps Z. Peaks use `MeshBasicMaterial` with `fog: false` so they stay visible.
+- **Jump**: If `state.onGround && !o.used`, launches player (`velY = 8 + speed * 0.12`), awards jump points, plays SFX.
+- **Tree / Person**: If airborne height `playerY < 1.1`, triggers `crash()`.
+- **Landing Evaluation**:
+  - When airborne player returns to `playerY <= 0`:
+    - Check `playerYaw` angle deviation from 0° (forward) or 180° (backward).
+    - If deviation &le; 25°, safe landing bonus awarded (`comboEl` callout, landing SFX).
+    - If deviation &gt; 25°, triggers `crash()` with wipeout callout.
 
 ### Scoring (play)
 
 - Continuous: `score += speed * 0.4 * dt`
-- Air: scaled by air time and speed
-- Jump touch / landing bonuses
-
-### Persistence
-
-`updateHigh()` writes hi-score to `localStorage` when the run ends or score is shown on menus.
+- In-air rotation: `score += abs(yawChange) * 20`
+- Continuous air time: `airTime * speed * 0.8 * dt * 10`
+- Jump launch: `Math.floor(speed * 1.2)`
+- Safe forward landing: air bonus (`airTime * speed * 2.5`) + spin bonus (`cumulativeAirRotation * 50`)
+- Safe backward landing: above + 150 extra backward points
 
 ## Important functions
 
 | Function | Purpose |
 |----------|---------|
 | `speedForLevel(n)` | Level → numeric speed |
-| `startGame()` | Reset state, clear/spawn obstacles, show HUD |
-| `endGame()` | Game over UI, save hi-score |
-| `showMenu()` | Return to title |
-| `levelUp()` | Increment level, bump speed, show banner |
-| `crash()` | Lose a life; 0 lives → end game |
-| `spawnAhead()` | Add next wave of hazards/jumps |
-| `tickPlay(dt)` | Physics, scroll, collide, level timer, camera |
-| `animate()` | `requestAnimationFrame` loop; snow + render |
-| `makeTree` / `makePerson` / `makeJump` | Procedural meshes |
-| `box(w,h,d,color,x,y,z)` | Helper for chunky geometry |
-
-## Player model
-
-- Root `player` (on `track`): position, lean (`rotation.z`), crash wobble.
-- Child `playerMesh` with `rotation.y = Math.PI` so the face points **downhill (−Z)**; camera sees the back of the character.
-- Built from stacked boxes (skis, body, pink hat, pom-pom, blush).
+| `startGame()` | Reset state, clear/spawn obstacles, show HUD, start music |
+| `endGame()` | Game over UI, save hi-score, stop music |
+| `showMenu()` | Return to title screen, start instruction cycles |
+| `levelUp()` | Increment level, bump speed, show level banner, play arpeggio |
+| `crash()` | Lose a life, screen flash, wobble; if 0 lives → endGame |
+| `spawnAhead()` | Add next wave of hazards/jumps with spacing clearance |
+| `isNearJump` / `isJumpNearTree` | Spacing validation helpers to prevent unfair hazard overlaps |
+| `tickPlay(dt)` | Physics, steering/spinning, object movement, collisions, landings, camera |
+| `animate()` | `requestAnimationFrame` loop, snow animation, render |
+| `makeTree` / `makePerson` / `makeJump` | Procedural 3D obstacle meshes |
+| `box(w,h,d,color,x,y,z)` | Helper for chunky geometry boxes |
+| `startInstructions()` / `stopInstructions()` | Cycles animated menu hints |
 
 ## Tuning knobs
 
 | Constant | Effect |
 |----------|--------|
 | `LEVEL_INTERVAL` | Seconds between level-ups (default 30) |
-| `BASE_SPEED` / `SPEED_PER_LEVEL` | Pace curve |
-| `MAX_LEVEL` | Cap on level / speed growth |
-| `TRACK_PITCH` | How steep the downhill read feels |
-| `PIXEL_SCALE` | Chunkier pixels when higher |
-| `SLOPE_W` | Half-width playable bounds scale with this |
-| Spawn rates in `spawnAhead` | Tree count, person/jump probability, gap size |
-| Mountain `speed` in `buildMountainLayer` | Parallax amount |
+| `BASE_SPEED` / `SPEED_PER_LEVEL` | Pace curve (default base 36, +7 per level) |
+| `MAX_LEVEL` | Cap on level / speed growth (default 20) |
+| `TRACK_PITCH` | Downhill angle (default -0.34 rad ~ 19°) |
+| `PIXEL_SCALE` | Pixelation factor (default 3) |
+| `SLOPE_W` | Playable width of the slope (default 28) |
+| `rotSpeed` in `tickPlay` | Aerial spin rate for keyboard (default 7.5 rad/s) |
+| `maxError` in landing check | Tolerance window in degrees for safe landing (default 25°) |
 
 ## UI elements (DOM ids)
 
 | Id | Role |
 |----|------|
-| `#hud` | Score, lives, level, speed readout |
+| `#hud` | Score, lives hearts, level, speed readout |
 | `#menu` / `#gameover` | Title and wipe-out screens |
-| `#air-banner` | Air time feedback |
-| `#level-up-banner` | Level-up flash |
+| `#menu-instructions` | Cycling retro tutorial text banner on title screen |
+| `#menu-skier` | 2D pixel art canvas preview |
+| `#stars` | Twinkling starfield background for menu |
+| `#air-banner` | Real-time spin angle and air bonus readout while jumping |
+| `#level-up-banner` | Level-up notification flash |
 | `#crash-flash` | Red full-screen hit flash |
-| `#combo` | Jump / landing point callouts |
+| `#combo` | Jump, trick, and landing callout feedback |
+| `#mute-btn` | Sound mute/unmute toggle |
 
-## Conventions for changes
+## Conventions for agents making changes
 
 - **Do not start a local web server** to run or verify changes; load the single `index.html` file directly in the browser instead.
 - Keep the game a **single standalone HTML file** unless there is a strong reason to split.
-- Prefer adjusting constants and `tickPlay` / `spawnAhead` over adding frameworks.
-- New obstacles: add a factory like `makeTree`, spawn in `spawnAhead`, handle type in the collision loop, parent meshes to **`track`** (not `scene`), remove with `track.remove`.
-- Anything that should scroll with the run belongs on `track`; sky stays on `scene` so it does not pitch with the slope.
-- Preserve the 8-bit aesthetic: low internal resolution, flat colors, simple box characters, CRT overlays.
-- After behavior changes, verify: steer, jump air score, 3-crash → menu, level-up at 30s, mountains visible and parallax scrolling.
+- **Preserve the 8-bit / neon aesthetic**: low internal resolution (`PIXEL_SCALE`), flat colors (`MeshLambertMaterial` / `MeshBasicMaterial`), chunky box geometry, scanlines/vignette.
+- **Audio changes**: Keep Web Audio synthesizer completely self-contained without external audio files. Check `sfx.init()` on user interactions.
+- **Adding new obstacles / entities**:
+  1. Create a factory function returning a `THREE.Group` (like `makeTree()`, `makePerson()`, `makeJump()`).
+  2. Set `g.userData.radius` and `g.userData.type`.
+  3. Parent meshes to **`track`** (not `scene`) so they inherit the slope pitch.
+  4. Spawn in `spawnAhead()` ensuring clearance with jump ramps.
+  5. Handle movement and collision detection in `tickPlay`.
+  6. Clean up in `clearObjects()` and when `o.z > 25` using `track.remove(o.mesh)`.
+- **Coordinate reference reminder**:
+  - `track` has pitch rotation `track.rotation.x = -0.34`.
+  - Content on `track` moves toward +Z.
+  - Sky and fog live directly on `scene` so they don't pitch with the slope.
+- After behavior changes, verify:
+  1. Ground steering and aerial trick rotation (keyboard + touch/pointer).
+  2. Jump ramp launching, air scoring, safe landing vs bad landing crash.
+  3. 3-crash game over transition and retry.
+  4. Music playback and mute button toggle.
+  5. Parallax layers scrolling and horizon mountain group framing.
