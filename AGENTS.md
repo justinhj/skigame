@@ -189,7 +189,7 @@ Objects are stored as:
 
 When an object’s Z is near the player (`≈ -3 … 2.5`):
 
-- **Jump Ramp**: Launches player (`velY = 8 + speed * 0.12`). If the player releases a fully-charged jump while in the light green approach zone in front of the ramp, a **SUPER JUMP** is triggered with 3x height (`velY * 1.732`), high bonus score (`speed * 4.0`), and distinct power-chord arpeggio SFX.
+- **Jump Ramp**: Launches player (`velY = 8 + speed * 0.12`). Requires skier to be on the ground (`playerY < 0.6`); airborne skiers flying above the ramp clear it cleanly without re-triggering. If the player releases a fully-charged jump while in the light green approach zone in front of the ramp, a **SUPER JUMP** is triggered with 3x height (`velY * 1.732`), high bonus score (`speed * 4.0`), and distinct power-chord arpeggio SFX. Hitting a ramp without releasing Space gives a standard ramp jump.
 - **Tree**: Crashes if `playerY < 2.0` (cannot be cleared with manual jump).
 - **Person / Other Skier**:
   - If airborne at `playerY >= 0.95`, safely clears the skier and awards a +75 "CLEARED SKIER!" bonus (once per skier).
