@@ -142,7 +142,7 @@ Negative X rotation lowers far (−Z) points in world space so the road appears 
 ### Audio system (`sfx`)
 
 Self-contained procedural Web Audio API synthesizer:
-- **`startMusic()` / `stopMusic()` / `toggleMute()`**: 8-step bassline sequencer (triangle wave) + melody (square wave) at 130 BPM with lookahead scheduling.
+- **`startMusic()` / `stopMusic()` / `toggleMute()`**: 128-step multi-section retro arcade soundtrack (bassline, filtered square melody, and noise percussion across 4 distinct themes) at 132 BPM with lookahead scheduling.
 - **Procedural sound effects**:
   - `playJump()`: upward frequency sweep (triangle wave).
   - `playSpin()`: quick blip on rotation steps in air (square wave).

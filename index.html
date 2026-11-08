@@ -557,30 +557,74 @@ const state = {
   anim: 0,
 };
 
+const N = {
+  E2: 82.41, F2: 87.31, G2: 98.00, Gs2: 103.83, A2: 110.00, B2: 123.47,
+  C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, Gs3: 207.65, A3: 220.00, B3: 246.94,
+  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, Gs4: 415.30, A4: 440.00, B4: 493.88,
+  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, Gs5: 830.61, A5: 880.00, B5: 987.77,
+  _: 0
+};
+
 const sfx = {
   ctx: null,
   musicInterval: null,
   nextNoteTime: 0,
   currentStep: 0,
   isMuted: false,
-  tempo: 130, // BPM
+  tempo: 132, // BPM
+  noiseBuffer: null,
 
-  // Retro bass sequence (A minor)
+  // 128-step multi-section 80s arcade soundtrack (~29s per cycle)
   bassSequence: [
-    110.00, // A2
-    110.00, // A2
-    130.81, // C3
-    98.00,  // G2
-    110.00, // A2
-    110.00, // A2
-    164.81, // E3
-    146.83  // D3
+    // Section 1: Main Groove (Am - F - C - G/E7)
+    N.A2, N.A2, N.E3, N.A2, N.A2, N.C3, N.A2, N.E3,
+    N.F2, N.F2, N.C3, N.F2, N.F2, N.A2, N.F2, N.C3,
+    N.C3, N.C3, N.G3, N.C3, N.C3, N.E3, N.C3, N.G3,
+    N.G2, N.G2, N.D3, N.G2, N.E2, N.Gs2, N.B2, N.E3,
+
+    // Section 2: Syncopated Carving Run (Am - F - Dm - E7)
+    N.A2, N.E3, N.A2, N.C3, N.A2, N.E3, N.A2, N.C3,
+    N.F2, N.C3, N.F2, N.A2, N.F2, N.C3, N.F2, N.A2,
+    N.D3, N.A3, N.D3, N.F3, N.D3, N.A3, N.F3, N.D3,
+    N.E2, N.B2, N.E3, N.Gs3, N.E2, N.B2, N.Gs3, N.E3,
+
+    // Section 3: Summit Chorus (C - G - Am - F/G)
+    N.C3, N.G3, N.C3, N.E3, N.C3, N.G3, N.C3, N.E3,
+    N.G2, N.D3, N.G2, N.B2, N.G2, N.D3, N.G2, N.B2,
+    N.A2, N.E3, N.A2, N.C3, N.A2, N.E3, N.A2, N.C3,
+    N.F2, N.C3, N.F2, N.A2, N.G2, N.D3, N.G2, N.B2,
+
+    // Section 4: Downhill Speed Climax (F - G - Am - E7 Turnaround)
+    N.F2, N.F2, N.C3, N.F2, N.F2, N.C3, N.A2, N.C3,
+    N.G2, N.G2, N.D3, N.G2, N.G2, N.D3, N.B2, N.D3,
+    N.A2, N.A2, N.E3, N.A2, N.A2, N.E3, N.C3, N.E3,
+    N.E2, N.Gs2, N.B2, N.D3, N.E3, N.D3, N.B2, N.Gs2
   ],
 
-  // Simple melody sequence
   melodySequence: [
-    440.00, 0,      493.88, 523.25,
-    0,      587.33, 440.00, 0
+    // Section 1: Main Theme Melody
+    N.A4, N._, N.C5, N._, N.B4, N._, N.A4, N._,
+    N.C5, N._, N.D5, N._, N.E5, N._, N.D5, N.C5,
+    N.E5, N._, N.G5, N._, N.E5, N.D5, N.C5, N._,
+    N.D5, N._, N.B4, N._, N.E5, N._, N._, N._,
+
+    // Section 2: Syncopated Carving Run
+    N.A4, N.B4, N.C5, N.E5, N.D5, N.C5, N.B4, N.A4,
+    N.F4, N.A4, N.C5, N.F5, N.E5, N.D5, N.C5, N.A4,
+    N.D5, N.E5, N.F5, N.A5, N.G5, N.F5, N.E5, N.D5,
+    N.B4, N._, N.C5, N._, N.B4, N.A4, N.Gs4, N.E4,
+
+    // Section 3: Summit Chorus (Uplifting)
+    N.E5, N._, N.G5, N._, N.A5, N._, N.G5, N._,
+    N.D5, N._, N.F5, N._, N.G5, N._, N.F5, N.E5,
+    N.C5, N._, N.E5, N._, N.F5, N._, N.E5, N.D5,
+    N.A4, N._, N.C5, N._, N.D5, N.E5, N.D5, N._,
+
+    // Section 4: Downhill Speed Climax (Rapid Arpeggio Run)
+    N.C5, N.D5, N.E5, N.F5, N.E5, N.D5, N.C5, N.B4,
+    N.D5, N.E5, N.F5, N.G5, N.F5, N.E5, N.D5, N.C5,
+    N.E5, N.F5, N.G5, N.A5, N.G5, N.F5, N.E5, N.D5,
+    N.B5, N._, N.Gs5, N._, N.E5, N._, N.D5, N.B4
   ],
 
   init() {
@@ -589,6 +633,15 @@ const sfx = {
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
+    }
+    if (!this.noiseBuffer && this.ctx) {
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.1);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      this.noiseBuffer = buffer;
     }
   },
 
@@ -599,10 +652,10 @@ const sfx = {
     this.nextNoteTime = this.ctx.currentTime;
     this.currentStep = 0;
 
-    // Scheduler tick every 100ms
+    // Scheduler tick every 75ms
     this.musicInterval = setInterval(() => {
       this.scheduler();
-    }, 100);
+    }, 75);
   },
 
   stopMusic() {
@@ -628,9 +681,9 @@ const sfx = {
     while (this.nextNoteTime < this.ctx.currentTime + scheduleAheadTime) {
       this.scheduleNote(this.currentStep, this.nextNoteTime);
       
-      // Advance to next step
+      // Advance to next step (128-step cycle)
       this.nextNoteTime += stepDuration;
-      this.currentStep = (this.currentStep + 1) % 8;
+      this.currentStep = (this.currentStep + 1) % 128;
     }
   },
 
@@ -644,27 +697,73 @@ const sfx = {
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(bassFreq, time);
-      gain.gain.setValueAtTime(0.18, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+      gain.gain.setValueAtTime(0.16, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.21);
       osc.connect(gain);
       gain.connect(this.ctx.destination);
       osc.start(time);
-      osc.stop(time + 0.22);
+      osc.stop(time + 0.21);
     }
 
-    // 2. Melody (Square wave, quieter)
+    // 2. Melody (Square wave with warm filter)
     const melodyFreq = this.melodySequence[step];
-    if (melodyFreq > 0 && step % 2 === 0) {
+    if (melodyFreq > 0) {
       const osc = this.ctx.createOscillator();
+      const filter = this.ctx.createBiquadFilter();
       const gain = this.ctx.createGain();
+      
       osc.type = 'square';
       osc.frequency.setValueAtTime(melodyFreq, time);
-      gain.gain.setValueAtTime(0.04, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
-      osc.connect(gain);
+      
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(3000, time);
+      
+      gain.gain.setValueAtTime(0.045, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.19);
+      
+      osc.connect(filter);
+      filter.connect(gain);
       gain.connect(this.ctx.destination);
+      
       osc.start(time);
-      osc.stop(time + 0.18);
+      osc.stop(time + 0.19);
+    }
+
+    // 3. Chiptune Percussion (Snare & Hi-Hat)
+    if (this.noiseBuffer) {
+      // Snare on beats 2 & 4 (step % 4 === 2), or roll on turnaround (step >= 120)
+      const isSnare = (step >= 120 && step % 2 === 0) || (step % 4 === 2);
+      if (isSnare) {
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1400, time);
+        filter.Q.setValueAtTime(1.5, time);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.035, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(time);
+        noise.stop(time + 0.08);
+      } else if (step % 2 === 1) {
+        // Crisp closed hi-hat on offbeats
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = this.noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(5000, time);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.015, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(time);
+        noise.stop(time + 0.03);
+      }
     }
   },
 
