@@ -54,24 +54,31 @@ There is **no manual speed control**. Speed is fixed per level and increases aut
   - Landing backward yields air time bonus + spin bonus + 150 extra backward bonus (`comboEl: BACKWARD LANDING`).
   - Landing sideways (> 25° deviation from forward or backward) results in a **WIPEOUT** (costs 1 life via `crash()`).
 - **3 lives**. After the 3rd crash → game over menu.
-- **Level up every 30 seconds** (`LEVEL_INTERVAL`). Speed increases; hazard density and fog density scale with level.
+- **10 hand-crafted levels**: Each level is defined by an ASCII grid array (`LEVEL_1` through `LEVEL_10`). Crossing the finish gate at the end of a level triggers course completion (+1000 bonus, ascending fanfare) and advances to the next level. Clearing all 10 courses awards the +5000 champion bonus and displays the victory screen.
 - Hi-score is stored in `localStorage` under key `slopeRacerHi`.
 
 ### Level / speed formula
 
 ```js
+ROW_SPACING = 12
 BASE_SPEED = 36
 SPEED_PER_LEVEL = 7
-MAX_LEVEL = 20
+MAX_LEVEL = 10
 speed = BASE_SPEED + (level - 1) * SPEED_PER_LEVEL
 ```
 
-| Level | Speed |
-|-------|-------|
-| 1 | 36 |
-| 2 | 43 |
-| 3 | 50 |
-| … | +7 each |
+| Level | Speed | Target Duration |
+|-------|-------|-----------------|
+| 1 | 36 | ~60s (Warmup Slope) |
+| 2 | 43 | ~50s (Slalom Valley) |
+| 3 | 50 | ~43s (Twin Peaks) |
+| 4 | 57 | ~38s (Pine Forest) |
+| 5 | 64 | ~34s (Stunt Ridge) |
+| 6 | 71 | ~30s (Rush Hour) |
+| 7 | 78 | ~28s (Black Diamond) |
+| 8 | 85 | ~25s (Avalanche Run) |
+| 9 | 92 | ~24s (Daredevil Drop) |
+| 10 | 99 | ~22s (Olympic Summit) |
 
 ## File layout
 
@@ -170,19 +177,25 @@ Self-contained procedural Web Audio API synthesizer:
   - Converted to horizontal position delta on the ground, or yaw rotation delta in the air.
   - Consumed and reset each frame in `tickPlay`.
 
-### Spawning & clearance validation
+### Spawning & Grid Levels
 
-`spawnAhead()` places trees, other skiers, and jump ramps at `state.nextSpawnZ`:
-- Trees and jumps use `isNearJump` and `isJumpNearTree` to avoid impossible obstacle placements right next to or in front of ramps (min 14 units in Z, 5 units in X).
-- Trees scale in density with `difficulty` (`1 + Math.floor(Math.random() * (2.4 + Math.min(4.4, diff * 0.65)))`).
-- Skiers (`makePerson`) have random color suits and random lateral drift (`o.drift`), changing carving direction periodically.
-- Gaps between waves shrink as difficulty rises: `Math.max(7, 17 - diff * 0.9) + Math.random() * 6`.
-- The loop keeps enough objects ahead (min Z &lt; −95 or count &lt; 8).
+The 10 levels are defined by ASCII arrays (`LEVEL_1` through `LEVEL_10` in `LEVELS`).
+- Each string in a level array is a 15-character row representing a slice of the piste:
+  - `.` or `' '`: Clear snow
+  - `T`: Tree obstacle
+  - `S`: Other skier starting point
+  - `J` or `R`: Jump ramp with green boost zone
+  - `F`: Finish gate (automatically placed at end if omitted)
+- Columns span from `x = -11.9` to `+11.9` across the 28-unit wide slope.
+- Rows are spaced apart by `ROW_SPACING = 12` units in Z.
+- Lookahead row spawning dynamically tracks `state.nextSpawnZ` and spawns rows when `nextSpawnZ > -105`.
+- Objects scroll toward the camera (+Z) and are removed when `z > 25`.
+- Crossing the finish gate (`o.type === 'finish' && o.z >= -1.0`) triggers `levelUp()`, plays fanfare, awards +1000 bonus, and begins spawning the next level.
 
 Objects are stored as:
 
 ```js
-{ mesh, type: 'tree'|'person'|'jump', x, z, radius, drift?, used? }
+{ mesh, type: 'tree'|'person'|'jump'|'finish', x, z, radius, drift?, used? }
 ```
 
 ### Collision & jump mechanics
